@@ -1,23 +1,13 @@
-import { COOKIE_NAME } from "@shared/const";
-import { TRPCError } from "@trpc/server";
+import { GoogleGenAI, Modality } from "@google/genai";
+import { LIVE_MODEL, safeLiveToolDeclarations } from "@shared/juni";
 import { z } from "zod";
+import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
+import { ENV } from "./_core/env";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
-import {
-  createConversation,
-  createMessage,
-  getConversationForUser,
-  listConversations,
-  listMessages,
-  touchConversation,
-} from "./db";
-import { orchestrateConversation } from "./orchestration";
-import { uploadUserFile } from "./upload";
 
-const conversationIdInput = z.object({
-  conversationId: z.number().int().positive(),
-});
+const amountSchema = z.number().finite().min(100).max(100_000);
 
 export const appRouter = router({
   system: systemRouter,
@@ -29,117 +19,63 @@ export const appRouter = router({
       return { success: true } as const;
     }),
   }),
-  conversations: router({
-    list: protectedProcedure.query(({ ctx }) => listConversations(ctx.user.id)),
-    create: protectedProcedure
-      .input(
-        z
-          .object({ title: z.string().trim().min(1).max(160).optional() })
-          .optional()
-      )
-      .mutation(({ ctx, input }) =>
-        createConversation(ctx.user.id, input?.title ?? "New conversation")
-      ),
-    messages: protectedProcedure
-      .input(conversationIdInput)
-      .query(async ({ ctx, input }) => {
-        const conversation = await getConversationForUser(
-          input.conversationId,
-          ctx.user.id
+  live: router({
+    createEphemeralToken: protectedProcedure.mutation(async ({ ctx }) => {
+      if (!ENV.geminiApiKey) {
+        throw new Error(
+          "Gemini Live is not configured. Add GEMINI_API_KEY on the server."
         );
-        if (!conversation)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Conversation not found",
-          });
-        return listMessages(input.conversationId, ctx.user.id);
-      }),
-    send: protectedProcedure
-      .input(
-        z.object({
-          conversationId: z.number().int().positive(),
-          content: z.string().trim().min(1).max(12000),
-        })
-      )
-      .mutation(async ({ ctx, input }) => {
-        const conversation = await getConversationForUser(
-          input.conversationId,
-          ctx.user.id
-        );
-        if (!conversation)
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Conversation not found",
-          });
+      }
 
-        const userMessage = await createMessage({
-          conversationId: input.conversationId,
-          userId: ctx.user.id,
-          role: "user",
-          content: input.content,
-          status: "complete",
-        });
-        await touchConversation(input.conversationId, ctx.user.id);
+      const now = Date.now();
+      const expireTime = new Date(now + 30 * 60 * 1000).toISOString();
+      const newSessionExpireTime = new Date(now + 60 * 1000).toISOString();
+      const ai = new GoogleGenAI({ apiKey: ENV.geminiApiKey });
+      const token = await ai.authTokens.create({
+        config: {
+          uses: 1,
+          expireTime,
+          newSessionExpireTime,
+          liveConnectConstraints: {
+            model: LIVE_MODEL,
+            config: {
+              responseModalities: [Modality.AUDIO],
+              sessionResumption: {},
+              tools: [
+                { functionDeclarations: [...safeLiveToolDeclarations] as any },
+              ],
+            },
+          },
+        },
+      });
 
-        try {
-          const history = await listMessages(input.conversationId, ctx.user.id);
-          const result = await orchestrateConversation({
-            systemInstructions:
-              "You are JUNI, a trustworthy personal AI workspace. Answer clearly, distinguish facts from uncertainty, and ask a focused follow-up question when the request is underspecified.",
-            userInput: input.content,
-            history: history.slice(-12).map(message => ({
-              role: message.role === "assistant" ? "assistant" : "user",
-              content: message.content,
-            })),
-          });
-          const assistantMessage = await createMessage({
-            conversationId: input.conversationId,
-            userId: ctx.user.id,
-            role: "assistant",
-            content: result.content,
-            status: "complete",
-          });
-          await touchConversation(input.conversationId, ctx.user.id);
-          return {
-            userMessage,
-            assistantMessage,
-            capability: result.capability,
-          };
-        } catch (error) {
-          await createMessage({
-            conversationId: input.conversationId,
-            userId: ctx.user.id,
-            role: "assistant",
-            content:
-              "JUNI could not complete this response. Your message is saved; please try again.",
-            status: "error",
-          });
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: "JUNI response generation failed",
-          });
-        }
-      }),
-  }),
-  files: router({
-    upload: protectedProcedure
-      .input(
-        z.object({
-          originalName: z.string().trim().min(1).max(255),
-          mimeType: z.string().trim().min(1).max(255),
-          contentBase64: z.string().min(4).max(36_000_000),
-        })
-      )
-      .mutation(async ({ ctx, input }) => {
-        try {
-          return await uploadUserFile({ ...input, userId: ctx.user.id });
-        } catch (error) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: error instanceof Error ? error.message : "Upload failed",
-          });
-        }
-      }),
+      if (!token.name)
+        throw new Error("Gemini did not return an ephemeral token.");
+      console.info("[Live] Ephemeral token issued", {
+        userId: ctx.user.id,
+        expiresAt: expireTime,
+      });
+      return { token: token.name, expiresAt: expireTime, model: LIVE_MODEL };
+    }),
+    getRechargeInfo: protectedProcedure.query(({ ctx }) => ({
+      userId: ctx.user.id,
+      currency: "PKR",
+      status: "not_connected" as const,
+      balance: null,
+      message:
+        "No billing provider is connected yet. This read-only preview will not expose or invent account data.",
+    })),
+    startRecharge: protectedProcedure
+      .input(z.object({ amount: amountSchema }))
+      .mutation(({ input, ctx }) => ({
+        status: "awaiting_provider" as const,
+        amount: input.amount,
+        currency: "PKR" as const,
+        userId: ctx.user.id,
+        checkoutUrl: null,
+        message:
+          "Recharge intent recorded in the safe preview layer. A verified payment provider must be connected before checkout can begin.",
+      })),
   }),
 });
 

@@ -1,395 +1,707 @@
-import React from "react";
 import { startLogin } from "@/const";
-import { AIChatBox, type Message as ChatMessage } from "@/components/AIChatBox";
-import CapabilityBoard from "@/components/CapabilityBoard";
-import VoiceSystem from "@/components/VoiceSystem";
-import { Button } from "@/components/ui/button";
-import { useAuth } from "@/_core/hooks/useAuth";
-import { getWorkspaceStatus } from "@/lib/workspaceStatus";
 import { trpc } from "@/lib/trpc";
-import { cn } from "@/lib/utils";
-import { useEffect, useMemo, useState } from "react";
+import { GoogleGenAI, Modality } from "@google/genai";
 import {
-  AlertCircle,
-  CheckCircle2,
+  Activity,
+  ArrowUpRight,
+  Check,
   ChevronDown,
-  ChevronUp,
-  CircleUserRound,
-  LogOut,
+  CircleAlert,
+  ExternalLink,
+  Headphones,
+  Loader2,
+  LogIn,
   Mic,
-  Plus,
+  MicOff,
+  MoreHorizontal,
+  Pause,
+  Radio,
   ShieldCheck,
   Sparkles,
-  Wifi,
+  UserRound,
+  WalletCards,
+  X,
+  Zap,
 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { JUNI_PERSONAS, LIVE_MODEL, type PersonaId } from "@shared/juni";
+import { useAuth } from "@/_core/hooks/useAuth";
+
+type SessionStatus =
+  | "idle"
+  | "connecting"
+  | "listening"
+  | "thinking"
+  | "speaking"
+  | "error";
+type PendingAction =
+  | { kind: "website"; id?: string; url: string; reason: string }
+  | { kind: "recharge"; id?: string; amount: number }
+  | null;
+
+type ActivityItem = {
+  id: number;
+  label: string;
+  detail: string;
+  tone: "mint" | "violet" | "amber" | "slate";
+};
+
+function floatToPcm16(input: Float32Array) {
+  const output = new Int16Array(input.length);
+  for (let index = 0; index < input.length; index += 1) {
+    const sample = Math.max(-1, Math.min(1, input[index] ?? 0));
+    output[index] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+  }
+  return output;
+}
+
+function pcm16ToBase64(input: Int16Array) {
+  const bytes = new Uint8Array(input.buffer);
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(
+      ...Array.from(bytes.subarray(index, index + chunkSize))
+    );
+  }
+  return btoa(binary);
+}
+
+function base64ToPcm16(value: string) {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1)
+    bytes[index] = binary.charCodeAt(index);
+  return new Int16Array(bytes.buffer);
+}
 
 export default function Home() {
-  const {
-    user,
-    loading: authLoading,
-    error: authError,
+  const { user, loading, isAuthenticated } = useAuth();
+  const tokenMutation = trpc.live.createEphemeralToken.useMutation();
+  const rechargeMutation = trpc.live.startRecharge.useMutation();
+  const trpcUtils = trpc.useUtils();
+  const [assistantId, setAssistantId] = useState<PersonaId>("juni");
+  const [status, setStatus] = useState<SessionStatus>("idle");
+  const [showMenu, setShowMenu] = useState(false);
+  const [pendingAction, setPendingAction] = useState<PendingAction>(null);
+  const [activity, setActivity] = useState<ActivityItem[]>([]);
+  const [transcript, setTranscript] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+  const sessionRef = useRef<any>(null);
+  const generationRef = useRef(0);
+  const streamRef = useRef<MediaStream | null>(null);
+  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const inputContextRef = useRef<AudioContext | null>(null);
+  const outputContextRef = useRef<AudioContext | null>(null);
+  const nextPlayTimeRef = useRef(0);
+  const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
+  const statusRef = useRef<SessionStatus>("idle");
+
+  const persona = JUNI_PERSONAS[assistantId];
+  const isLive = status !== "idle" && status !== "error";
+  const isBusy = status === "connecting" || status === "thinking";
+
+  const addActivity = useCallback(
+    (label: string, detail: string, tone: ActivityItem["tone"]) => {
+      setActivity(current =>
+        [{ id: Date.now(), label, detail, tone }, ...current].slice(0, 4)
+      );
+    },
+    []
+  );
+
+  const stopPlayback = useCallback(() => {
+    sourcesRef.current.forEach(source => {
+      try {
+        source.stop();
+      } catch {
+        /* source already ended */
+      }
+    });
+    sourcesRef.current.clear();
+    nextPlayTimeRef.current = 0;
+  }, []);
+
+  const playPcmChunk = useCallback(async (base64: string) => {
+    const context =
+      outputContextRef.current ?? new AudioContext({ sampleRate: 24000 });
+    outputContextRef.current = context;
+    if (context.state === "suspended") await context.resume();
+    const pcm = base64ToPcm16(base64);
+    const buffer = context.createBuffer(1, pcm.length, 24000);
+    const channel = buffer.getChannelData(0);
+    for (let index = 0; index < pcm.length; index += 1)
+      channel[index] = (pcm[index] ?? 0) / 32768;
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    source.connect(context.destination);
+    const startAt = Math.max(context.currentTime, nextPlayTimeRef.current);
+    source.start(startAt);
+    nextPlayTimeRef.current = startAt + buffer.duration;
+    sourcesRef.current.add(source);
+    source.onended = () => sourcesRef.current.delete(source);
+  }, []);
+
+  const sendToolResponse = useCallback(
+    (id: string | undefined, name: string, response: unknown) => {
+      sessionRef.current?.sendToolResponse({
+        functionResponses: [{ id, name, response }],
+      });
+    },
+    []
+  );
+
+  const closeSession = useCallback(async () => {
+    generationRef.current += 1;
+    sessionRef.current?.close?.();
+    sessionRef.current = null;
+    processorRef.current?.disconnect();
+    processorRef.current = null;
+    streamRef.current?.getTracks().forEach(track => track.stop());
+    streamRef.current = null;
+    if (inputContextRef.current)
+      await inputContextRef.current.close().catch(() => undefined);
+    inputContextRef.current = null;
+    stopPlayback();
+    setStatus("idle");
+    statusRef.current = "idle";
+  }, [stopPlayback]);
+
+  const handleLiveMessage = useCallback(
+    async (message: any, generation: number) => {
+      if (generation !== generationRef.current) return;
+      const content = message.serverContent;
+      if (content?.interrupted) {
+        stopPlayback();
+        setStatus("listening");
+        statusRef.current = "listening";
+      }
+      if (content?.inputTranscription?.text)
+        setTranscript(content.inputTranscription.text);
+      if (content?.outputTranscription?.text)
+        setTranscript(content.outputTranscription.text);
+      if (content?.modelTurn?.parts) {
+        for (const part of content.modelTurn.parts) {
+          if (part.inlineData?.data) {
+            setStatus("speaking");
+            statusRef.current = "speaking";
+            await playPcmChunk(part.inlineData.data);
+          }
+        }
+      }
+      if (content?.turnComplete) {
+        setStatus("listening");
+        statusRef.current = "listening";
+      }
+      const calls = message.toolCall?.functionCalls ?? [];
+      for (const call of calls) {
+        const args = (call.args ?? {}) as Record<string, unknown>;
+        addActivity("Tool requested", call.name, "amber");
+        if (call.name === "open_website") {
+          const rawUrl = typeof args.url === "string" ? args.url : "";
+          try {
+            const url = new URL(rawUrl);
+            if (url.protocol !== "https:")
+              throw new Error("Only HTTPS websites can be opened.");
+            setPendingAction({
+              kind: "website",
+              id: call.id,
+              url: url.toString(),
+              reason: String(args.reason ?? "Requested by JUNI"),
+            });
+          } catch {
+            sendToolResponse(call.id, call.name, {
+              ok: false,
+              error: "Only valid https URLs are allowed.",
+            });
+          }
+        } else if (call.name === "get_recharge_info") {
+          const info = await trpcUtils.live.getRechargeInfo.fetch();
+          sendToolResponse(call.id, call.name, info);
+          addActivity("Read-only check", "Recharge status reviewed", "slate");
+        } else if (call.name === "start_recharge") {
+          const amount = Number(args.amount);
+          if (!Number.isFinite(amount) || amount < 100 || amount > 100000) {
+            sendToolResponse(call.id, call.name, {
+              ok: false,
+              error: "Amount must be between PKR 100 and PKR 100,000.",
+            });
+          } else {
+            setPendingAction({ kind: "recharge", id: call.id, amount });
+          }
+        } else {
+          sendToolResponse(call.id, call.name, {
+            ok: false,
+            error: "Tool is not allowlisted.",
+          });
+        }
+      }
+    },
+    [
+      addActivity,
+      playPcmChunk,
+      sendToolResponse,
+      stopPlayback,
+      trpcUtils.live.getRechargeInfo,
+    ]
+  );
+
+  const connectSession = useCallback(async () => {
+    if (!isAuthenticated) {
+      startLogin();
+      return;
+    }
+    setErrorMessage("");
+    setStatus("connecting");
+    statusRef.current = "connecting";
+    const generation = generationRef.current + 1;
+    generationRef.current = generation;
+    try {
+      const token = await tokenMutation.mutateAsync();
+      const ai = new GoogleGenAI({ apiKey: token.token });
+      const session = await ai.live.connect({
+        model: LIVE_MODEL,
+        config: {
+          responseModalities: [Modality.AUDIO],
+          inputAudioTranscription: {},
+          outputAudioTranscription: {},
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: persona.voiceName },
+            },
+          },
+        },
+        callbacks: {
+          onopen: () =>
+            addActivity(
+              "Live session",
+              `${persona.name} is listening`,
+              assistantId === "juni" ? "mint" : "violet"
+            ),
+          onmessage: message => void handleLiveMessage(message, generation),
+          onerror: event => {
+            console.error("[Live] session error", event);
+            setErrorMessage(
+              "The live session lost its signal. Try reconnecting."
+            );
+            setStatus("error");
+            statusRef.current = "error";
+          },
+          onclose: () => {
+            if (
+              generation === generationRef.current &&
+              statusRef.current !== "idle"
+            ) {
+              setStatus("idle");
+              statusRef.current = "idle";
+            }
+          },
+        },
+      });
+      sessionRef.current = session;
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+        },
+      });
+      streamRef.current = stream;
+      const inputContext = new AudioContext({ sampleRate: 16000 });
+      inputContextRef.current = inputContext;
+      const source = inputContext.createMediaStreamSource(stream);
+      const processor = inputContext.createScriptProcessor(4096, 1, 1);
+      processor.onaudioprocess = event => {
+        if (generation !== generationRef.current || !sessionRef.current) return;
+        const pcm = floatToPcm16(event.inputBuffer.getChannelData(0));
+        sessionRef.current.sendRealtimeInput({
+          audio: { data: pcm16ToBase64(pcm), mimeType: "audio/pcm;rate=16000" },
+        });
+      };
+      source.connect(processor);
+      processor.connect(inputContext.destination);
+      processorRef.current = processor;
+      setStatus("listening");
+      statusRef.current = "listening";
+      addActivity("Microphone", "PCM16 · 16 kHz · mono", "slate");
+    } catch (error) {
+      console.error("[Live] could not connect", error);
+      await closeSession();
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not start the voice session."
+      );
+      setStatus("error");
+      statusRef.current = "error";
+    }
+  }, [
+    addActivity,
+    assistantId,
+    closeSession,
+    handleLiveMessage,
     isAuthenticated,
-    logout,
-  } = useAuth();
-  const [selectedConversationId, setSelectedConversationId] = useState<
-    number | null
-  >(null);
-  const [showVoiceSystem, setShowVoiceSystem] = useState(false);
-  const conversationsQuery = trpc.conversations.list.useQuery(undefined, {
-    enabled: isAuthenticated,
-  });
-  const createConversation = trpc.conversations.create.useMutation({
-    onSuccess: conversation => {
-      setSelectedConversationId(conversation.id);
-      void conversationsQuery.refetch();
-    },
-  });
-  const messagesQuery = trpc.conversations.messages.useQuery(
-    { conversationId: selectedConversationId ?? 0 },
-    { enabled: isAuthenticated && selectedConversationId !== null }
-  );
-  const sendMessage = trpc.conversations.send.useMutation({
-    onSuccess: async () => {
-      await Promise.all([
-        messagesQuery.refetch(),
-        conversationsQuery.refetch(),
-      ]);
-    },
-  });
+    persona,
+    tokenMutation,
+  ]);
 
-  useEffect(() => {
-    const firstConversation = conversationsQuery.data?.[0];
-    if (selectedConversationId === null && firstConversation)
-      setSelectedConversationId(firstConversation.id);
-  }, [conversationsQuery.data, selectedConversationId]);
-
-  const chatMessages = useMemo<ChatMessage[]>(
-    () =>
-      (messagesQuery.data ?? [])
-        .filter(
-          (
-            message
-          ): message is typeof message & {
-            role: "system" | "user" | "assistant";
-          } => message.role !== "tool"
-        )
-        .map(message => ({ role: message.role, content: message.content })),
-    [messagesQuery.data]
-  );
-  const selectedConversation = conversationsQuery.data?.find(
-    item => item.id === selectedConversationId
-  );
-  const isBusy = sendMessage.isPending;
-  const workspaceStatus = getWorkspaceStatus({
-    sendError: sendMessage.isError,
-    creationError: createConversation.isError,
-  });
-  const statusMessage = workspaceStatus.message;
-  const retryWorkspace = () => {
-    void conversationsQuery.refetch();
-    if (selectedConversationId !== null) void messagesQuery.refetch();
+  const switchAssistant = async (next: PersonaId) => {
+    if (next === assistantId) return;
+    if (isLive) await closeSession();
+    setAssistantId(next);
+    setTranscript(JUNI_PERSONAS[next].greeting);
+    addActivity(
+      "Assistant changed",
+      JUNI_PERSONAS[next].name,
+      next === "juni" ? "mint" : "violet"
+    );
   };
 
-  if (authLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[#f6f8f7] text-sm text-slate-500">
-        Checking your secure session…
-      </div>
-    );
-  }
+  const approveAction = async () => {
+    if (!pendingAction) return;
+    if (pendingAction.kind === "website") {
+      window.open(pendingAction.url, "_blank", "noopener,noreferrer");
+      sendToolResponse(pendingAction.id, "open_website", {
+        ok: true,
+        opened: true,
+        url: pendingAction.url,
+      });
+      addActivity(
+        "Website opened",
+        new URL(pendingAction.url).hostname,
+        "mint"
+      );
+    } else {
+      const result = await rechargeMutation.mutateAsync({
+        amount: pendingAction.amount,
+      });
+      sendToolResponse(pendingAction.id, "start_recharge", result);
+      addActivity(
+        "Recharge intent",
+        `PKR ${pendingAction.amount.toLocaleString()} · provider pending`,
+        "amber"
+      );
+    }
+    setPendingAction(null);
+  };
 
-  if (!isAuthenticated) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-[#f6f8f7] px-6 py-12 text-slate-900">
-        <section className="w-full max-w-2xl rounded-[2rem] border border-white/80 bg-white/90 p-8 shadow-[0_24px_80px_rgba(42,70,65,0.14)] backdrop-blur sm:p-12">
-          <div className="mb-10 flex items-center gap-3 text-emerald-700">
-            <span className="grid size-11 place-items-center rounded-2xl bg-emerald-100">
-              <Sparkles className="size-5" />
-            </span>
-            <span className="font-display text-xl font-semibold tracking-tight">
-              JUNI AI
-            </span>
-          </div>
-          <p className="mb-4 text-sm font-semibold uppercase tracking-[0.24em] text-emerald-700">
-            A calmer intelligence layer
-          </p>
-          <h1 className="max-w-xl font-display text-4xl font-semibold leading-tight tracking-[-0.04em] text-slate-950 sm:text-6xl">
-            A trustworthy workspace for thinking, making, and moving forward.
-          </h1>
-          <p className="mt-6 max-w-xl text-base leading-7 text-slate-600">
-            JUNI keeps conversations, capability status, and future memory under
-            your control. Sign in to open your private workspace.
-          </p>
-          {authError && (
-            <p className="mt-5 flex items-center gap-2 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">
-              <AlertCircle className="size-4" />
-              {authError.message}
-            </p>
-          )}
-          <Button
-            className="mt-8 h-12 rounded-xl bg-slate-950 px-6 text-white hover:bg-slate-800"
-            onClick={() => startLogin()}
-          >
-            Enter JUNI workspace
-          </Button>
-        </section>
-      </main>
-    );
-  }
+  const declineAction = () => {
+    if (pendingAction?.kind === "website")
+      sendToolResponse(pendingAction.id, "open_website", {
+        ok: false,
+        cancelled: true,
+      });
+    if (pendingAction?.kind === "recharge")
+      sendToolResponse(pendingAction.id, "start_recharge", {
+        ok: false,
+        cancelled: true,
+      });
+    addActivity("Action cancelled", "Nothing was changed", "slate");
+    setPendingAction(null);
+  };
+
+  useEffect(
+    () => () => {
+      void closeSession();
+    },
+    [closeSession]
+  );
+
+  const statusLabel = useMemo(
+    () =>
+      ({
+        idle: "Ready when you are",
+        connecting: "Connecting securely",
+        listening: "Listening",
+        thinking: "Thinking",
+        speaking: "Speaking",
+        error: "Signal interrupted",
+      })[status],
+    [status]
+  );
+  const orbClass =
+    assistantId === "juni"
+      ? "from-emerald-300 via-cyan-300 to-blue-500"
+      : "from-fuchsia-300 via-violet-300 to-indigo-500";
+  const glowClass =
+    assistantId === "juni" ? "bg-emerald-300/20" : "bg-fuchsia-300/20";
 
   return (
-    <main className="min-h-screen bg-[#f6f8f7] text-slate-900">
-      <div className="mx-auto flex min-h-screen max-w-[1500px] flex-col lg:flex-row">
-        <aside className="flex w-full flex-col border-b border-slate-200/80 bg-white/70 px-5 py-5 backdrop-blur lg:min-h-screen lg:w-[290px] lg:border-b-0 lg:border-r lg:px-6 lg:py-7">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span className="grid size-10 place-items-center rounded-2xl bg-slate-950 text-emerald-200">
-                <Sparkles className="size-5" />
-              </span>
-              <div>
-                <div className="font-display text-lg font-semibold">JUNI</div>
-                <div className="text-[11px] uppercase tracking-[0.2em] text-slate-400">
-                  Personal intelligence
-                </div>
-              </div>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Account"
-              className="rounded-xl"
-            >
-              <CircleUserRound className="size-5 text-slate-500" />
-            </Button>
-          </div>
-          <Button
-            className="mt-8 h-11 justify-start gap-2 rounded-xl bg-emerald-700 text-white hover:bg-emerald-800"
-            onClick={() => createConversation.mutate({})}
-            disabled={createConversation.isPending}
+    <div className="min-h-screen overflow-hidden bg-[#080b13] text-white selection:bg-emerald-300 selection:text-[#080b13]">
+      <div
+        className={`pointer-events-none fixed left-1/2 top-[22%] size-[35rem] -translate-x-1/2 rounded-full ${glowClass} opacity-20 blur-[120px] transition-colors duration-500`}
+      />
+      <div className="pointer-events-none fixed inset-0 opacity-50 [background-image:linear-gradient(rgba(255,255,255,0.018)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.018)_1px,transparent_1px)] [background-size:32px_32px]" />
+      <header className="relative z-20 flex items-center justify-between px-5 py-5 sm:px-8 lg:px-12">
+        <div className="flex items-center gap-3">
+          <div
+            className={`grid size-10 place-items-center rounded-2xl bg-gradient-to-br ${orbClass} shadow-lg shadow-emerald-400/10`}
           >
-            <Plus className="size-4" />
-            New conversation
-          </Button>
-          {createConversation.isError && (
-            <div className="mt-3 rounded-xl bg-rose-50 px-3 py-3 text-xs leading-5 text-rose-700">
-              <div className="flex items-start gap-2">
-                <AlertCircle className="mt-0.5 size-4 shrink-0" />
-                Could not create a conversation.
-              </div>
-              <button
-                className="mt-1 font-semibold underline underline-offset-2"
-                onClick={() => createConversation.mutate({})}
-              >
-                Retry create
-              </button>
-            </div>
-          )}
-          <div className="mt-8 flex-1">
-            <div className="mb-3 px-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-              Conversations
-            </div>
-            <div className="space-y-1">
-              {conversationsQuery.isLoading ? (
-                <div className="px-3 py-4 text-sm text-slate-400">
-                  Loading your conversations…
-                </div>
-              ) : conversationsQuery.isError ? (
-                <div className="rounded-xl bg-rose-50 px-3 py-3 text-sm leading-5 text-rose-700">
-                  <div className="flex items-start gap-2">
-                    <AlertCircle className="mt-0.5 size-4 shrink-0" />
-                    Could not load conversations.
-                  </div>
-                  <button
-                    className="mt-2 font-semibold underline underline-offset-2"
-                    onClick={retryWorkspace}
-                  >
-                    Retry
-                  </button>
-                </div>
-              ) : conversationsQuery.data?.length ? (
-                conversationsQuery.data.map(conversation => (
-                  <button
-                    key={conversation.id}
-                    className={cn(
-                      "w-full rounded-xl px-3 py-3 text-left text-sm transition-colors",
-                      selectedConversationId === conversation.id
-                        ? "bg-emerald-50 font-medium text-emerald-900"
-                        : "text-slate-600 hover:bg-slate-100"
-                    )}
-                    onClick={() => setSelectedConversationId(conversation.id)}
-                  >
-                    {conversation.title}
-                  </button>
-                ))
-              ) : (
-                <div className="rounded-xl border border-dashed border-slate-200 px-3 py-4 text-sm leading-6 text-slate-400">
-                  Your first conversation will appear here.
-                </div>
-              )}
-            </div>
+            <Sparkles className="size-5 text-[#080b13]" />
           </div>
-          <div className="mt-6 rounded-2xl bg-slate-950 p-4 text-white">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <ShieldCheck className="size-4 text-emerald-300" />
-              Private by default
-            </div>
-            <p className="mt-2 text-xs leading-5 text-slate-400">
-              Your workspace is authenticated and scoped to your account.
-              External context will be treated as untrusted data.
+          <div>
+            <p className="font-display text-lg font-semibold tracking-[-0.04em]">
+              JUNI
+              <span
+                className={
+                  assistantId === "juni"
+                    ? "text-emerald-300"
+                    : "text-fuchsia-300"
+                }
+              >
+                {" "}
+                AI
+              </span>
+            </p>
+            <p className="font-mono text-[9px] uppercase tracking-[0.24em] text-white/35">
+              Voice companion
             </p>
           </div>
-          <Button
-            variant="ghost"
-            className="mt-3 justify-start gap-2 text-slate-500 hover:text-slate-900"
-            onClick={() => void logout()}
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="hidden items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-white/45 sm:flex">
+            <ShieldCheck className="size-3.5 text-emerald-300" /> Ephemeral
+            security
+          </div>
+          <button
+            onClick={() => setShowMenu(open => !open)}
+            className="rounded-xl border border-white/10 p-2.5 text-white/60 transition-colors hover:bg-white/[0.06] hover:text-white"
+            aria-label="Open account menu"
           >
-            <LogOut className="size-4" />
-            Sign out
-          </Button>
-        </aside>
-        <section className="flex min-h-[calc(100vh-90px)] flex-1 flex-col px-4 py-5 sm:px-8 sm:py-8 lg:px-12">
-          <header className="mb-6 flex flex-col gap-4 border-b border-slate-200/80 pb-6 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <p className="text-sm font-medium text-emerald-700">
-                Good to see you, {user?.name?.split(" ")[0] ?? "there"}.
+            <MoreHorizontal className="size-5" />
+          </button>
+          {showMenu && (
+            <div className="absolute right-5 top-16 w-64 rounded-2xl border border-white/10 bg-[#141727] p-4 shadow-2xl sm:right-8 lg:right-12">
+              <p className="text-xs text-white/40">Session account</p>
+              <p className="mt-1 truncate text-sm text-white/85">
+                {user?.name ?? "Not signed in"}
               </p>
-              <h2 className="mt-1 font-display text-3xl font-semibold tracking-[-0.04em] text-slate-950">
-                What are we working through?
-              </h2>
-            </div>
-            <div className="flex items-center gap-2 self-start rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">
-              <Wifi className="size-3.5" /> Secure session active
-            </div>
-          </header>
-          <div className="mb-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-500">
-            <span className="flex items-center gap-1.5">
-              <CheckCircle2 className="size-3.5 text-emerald-600" />
-              Conversation persistence ready
-            </span>
-            <span className="flex items-center gap-1.5">
-              <CheckCircle2 className="size-3.5 text-emerald-600" />
-              Server-side AI boundary ready
-            </span>
-            <span className="flex items-center gap-1.5">
-              <CircleUserRound className="size-3.5 text-slate-400" />
-              Uploads planned, not yet enabled
-            </span>
-          </div>
-          <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm font-semibold text-slate-950">
-                Hands-free mode
-              </p>
-              <p className="text-xs leading-5 text-slate-500">
-                Microphone permission is separate from AI response generation.
-              </p>
-            </div>
-            <Button
-              variant="outline"
-              className="w-fit rounded-xl"
-              onClick={() => setShowVoiceSystem(current => !current)}
-              aria-expanded={showVoiceSystem}
-              aria-controls="voice-system-panel"
-            >
-              <Mic className="size-4" />
-              {showVoiceSystem ? "Hide voice system" : "Open voice system"}
-              {showVoiceSystem ? (
-                <ChevronUp className="size-4" />
-              ) : (
-                <ChevronDown className="size-4" />
-              )}
-            </Button>
-          </div>
-          {showVoiceSystem && (
-            <div id="voice-system-panel" className="mb-5">
-              <VoiceSystem />
+              <a
+                href="/audit"
+                className="mt-4 flex items-center justify-between rounded-xl bg-white/[0.05] px-3 py-2 text-xs text-white/70 hover:bg-white/[0.08]"
+              >
+                View security audit <ArrowUpRight className="size-3.5" />
+              </a>
             </div>
           )}
-          <div className="flex-1 rounded-[1.75rem] border border-white/80 bg-white/75 p-2 shadow-[0_20px_60px_rgba(42,70,65,0.08)] backdrop-blur sm:p-4">
-            {messagesQuery.isError ? (
-              <div className="grid min-h-[55vh] place-items-center p-8 text-center">
-                <div>
-                  <AlertCircle className="mx-auto size-8 text-rose-600" />
-                  <p className="mt-4 font-display text-2xl font-semibold">
-                    This conversation is unavailable.
-                  </p>
-                  <p className="mt-2 max-w-md text-sm leading-6 text-slate-500">
-                    JUNI could not retrieve this thread. Your account and
-                    conversation ownership were not changed.
-                  </p>
-                  <Button
-                    variant="outline"
-                    className="mt-6 rounded-xl"
-                    onClick={retryWorkspace}
-                  >
-                    Retry loading
-                  </Button>
-                </div>
+        </div>
+      </header>
+
+      <main className="relative z-10 mx-auto flex min-h-[calc(100vh-88px)] max-w-6xl flex-col px-5 pb-8 sm:px-8 lg:px-12">
+        <section className="flex flex-1 flex-col items-center justify-center py-8 text-center sm:py-12">
+          <div className="mb-8 flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.035] p-1.5">
+            {(Object.keys(JUNI_PERSONAS) as PersonaId[]).map(id => (
+              <button
+                key={id}
+                onClick={() => void switchAssistant(id)}
+                className={`group flex items-center gap-2 rounded-full px-4 py-2 text-xs font-medium transition-all duration-200 ${assistantId === id ? "bg-white text-[#080b13] shadow-lg" : "text-white/45 hover:text-white"}`}
+              >
+                <span
+                  className={`size-2 rounded-full ${id === "juni" ? "bg-emerald-300" : "bg-fuchsia-300"}`}
+                />
+                {JUNI_PERSONAS[id].name}
+                <span className="hidden text-[10px] opacity-50 sm:inline">
+                  · {JUNI_PERSONAS[id].gender}
+                </span>
+              </button>
+            ))}
+          </div>
+          <p className="font-mono text-[10px] uppercase tracking-[0.25em] text-white/35">
+            {persona.role}
+          </p>
+          <h1 className="mt-3 font-display text-5xl font-semibold tracking-[-0.06em] text-white sm:text-7xl">
+            {persona.name}
+          </h1>
+          <p
+            className={`mt-3 text-sm font-medium transition-colors ${assistantId === "juni" ? "text-emerald-300" : "text-fuchsia-300"}`}
+          >
+            {persona.accent}
+          </p>
+          <div className="relative my-12 grid place-items-center sm:my-14">
+            <div
+              className={`absolute size-64 rounded-full ${glowClass} blur-3xl transition-colors duration-500`}
+            />
+            <div
+              className={`absolute size-52 rounded-full border border-white/10 ${isLive ? "animate-pulse" : ""}`}
+            />
+            <button
+              onClick={() => {
+                if (isLive) void closeSession();
+                else void connectSession();
+              }}
+              disabled={isBusy}
+              className={`group relative grid size-40 place-items-center rounded-full bg-gradient-to-br ${orbClass} shadow-[0_0_70px_rgba(98,255,190,0.18)] transition-all duration-300 hover:scale-[1.04] active:scale-[0.97] disabled:cursor-wait disabled:opacity-70 sm:size-48`}
+              aria-label={isLive ? "Stop voice session" : "Start voice session"}
+            >
+              {isBusy ? (
+                <Loader2 className="size-10 animate-spin text-[#080b13]" />
+              ) : isLive ? (
+                <MicOff className="size-10 text-[#080b13]" />
+              ) : (
+                <Mic className="size-10 text-[#080b13]" />
+              )}
+              <span className="absolute -bottom-10 whitespace-nowrap font-mono text-[10px] uppercase tracking-[0.2em] text-white/45">
+                {isLive ? "Tap to pause" : "Tap to speak"}
+              </span>
+            </button>
+          </div>
+          <div className="flex items-center gap-2 text-sm text-white/60">
+            <span
+              className={`size-2 rounded-full ${status === "error" ? "bg-rose-300" : isLive ? "animate-pulse bg-emerald-300" : "bg-white/20"}`}
+            />
+            {statusLabel}
+          </div>
+          {!isAuthenticated && !loading && (
+            <button
+              onClick={startLogin}
+              className="mt-4 inline-flex items-center gap-2 text-xs text-white/40 underline decoration-white/20 underline-offset-4 hover:text-white/75"
+            >
+              <LogIn className="size-3.5" /> Sign in to start a private live
+              session
+            </button>
+          )}
+          {errorMessage && (
+            <div className="mt-5 flex max-w-md items-center gap-2 rounded-xl border border-rose-300/20 bg-rose-400/[0.07] px-4 py-3 text-left text-xs text-rose-100/75">
+              <CircleAlert className="size-4 shrink-0 text-rose-300" />
+              {errorMessage}
+            </div>
+          )}
+          {transcript && (
+            <p className="mt-8 max-w-lg text-sm leading-6 text-white/45">
+              “{transcript}”
+            </p>
+          )}
+        </section>
+
+        <section className="grid gap-4 lg:grid-cols-[1fr_0.75fr]">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 sm:p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <span className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.2em] text-white/40">
+                <Activity className="size-3.5 text-emerald-300" /> Live activity
+              </span>
+              <span className="font-mono text-[10px] text-white/25">
+                {status === "idle" ? "STANDBY" : "STREAMING"}
+              </span>
+            </div>
+            {activity.length === 0 ? (
+              <div className="flex min-h-16 items-center gap-3 text-xs text-white/30">
+                <Radio className="size-4" /> Your session trace will appear
+                here.
               </div>
-            ) : selectedConversationId ? (
-              <AIChatBox
-                messages={chatMessages}
-                onSendMessage={content =>
-                  sendMessage.mutate({
-                    conversationId: selectedConversationId,
-                    content,
-                  })
-                }
-                isLoading={isBusy || messagesQuery.isLoading}
-                height="min(66vh, 680px)"
-                placeholder="Ask JUNI to help you think through something…"
-                emptyStateMessage="Start with a question, a decision, or a piece of work you want to make clearer."
-                suggestedPrompts={[
-                  "Help me turn a fuzzy idea into a clear plan",
-                  "What should I think through before making this decision?",
-                  "Summarize the tradeoffs in a balanced way",
-                ]}
-              />
             ) : (
-              <div className="grid min-h-[55vh] place-items-center p-8 text-center">
-                <div>
-                  <Sparkles className="mx-auto size-8 text-emerald-600" />
-                  <p className="mt-4 font-display text-2xl font-semibold">
-                    Your workspace is ready.
-                  </p>
-                  <p className="mt-2 max-w-md text-sm leading-6 text-slate-500">
-                    Create a conversation to begin. JUNI will be transparent
-                    about what it can access and what it has not verified.
-                  </p>
-                  <Button
-                    className="mt-6 rounded-xl bg-slate-950 text-white"
-                    onClick={() => createConversation.mutate({})}
+              <div className="space-y-3">
+                {activity.map(item => (
+                  <div
+                    key={item.id}
+                    className="flex items-center gap-3 text-xs"
                   >
-                    Start a conversation
-                  </Button>
-                  {createConversation.isError && (
-                    <p className="mt-4 flex items-center justify-center gap-2 text-sm text-rose-700">
-                      <AlertCircle className="size-4" />
-                      Creation failed — use “Retry create” in the sidebar.
-                    </p>
-                  )}
-                </div>
+                    <span
+                      className={`size-1.5 rounded-full ${item.tone === "mint" ? "bg-emerald-300" : item.tone === "violet" ? "bg-fuchsia-300" : item.tone === "amber" ? "bg-amber-300" : "bg-white/30"}`}
+                    />
+                    <span className="text-white/70">{item.label}</span>
+                    <span className="truncate text-white/30">
+                      {item.detail}
+                    </span>
+                  </div>
+                ))}
               </div>
             )}
           </div>
-          <CapabilityBoard />
-          <div
-            className={cn(
-              "mt-4 flex items-start gap-2 rounded-xl px-3 py-2.5 text-xs leading-5",
-              workspaceStatus.tone === "error"
-                ? "bg-rose-50 text-rose-700"
-                : "bg-white/60 text-slate-500"
-            )}
-          >
-            <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
-            <span>
-              {statusMessage}
-              {selectedConversation &&
-                ` Current thread: ${selectedConversation.title}.`}
-            </span>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 sm:p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <span className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.2em] text-white/40">
+                <WalletCards className="size-3.5 text-amber-300" /> Safe actions
+              </span>
+              <span className="rounded-full bg-amber-300/10 px-2 py-1 font-mono text-[9px] text-amber-200">
+                CONFIRM FIRST
+              </span>
+            </div>
+            <p className="text-xs leading-5 text-white/40">
+              JUNI can prepare website and recharge actions, but this app never
+              opens or charges anything without your approval.
+            </p>
           </div>
         </section>
-      </div>
-    </main>
+
+        <footer className="mt-6 flex flex-col gap-2 border-t border-white/10 pt-5 text-[10px] text-white/25 sm:flex-row sm:items-center sm:justify-between">
+          <span className="flex items-center gap-2">
+            <Headphones className="size-3.5" /> Gemini Live · native audio · 24
+            kHz output
+          </span>
+          <span className="font-mono">
+            {user
+              ? `Private session · ${user.name ?? "signed in"}`
+              : "Authentication required for live audio"}
+          </span>
+        </footer>
+      </main>
+
+      {pendingAction && (
+        <div className="fixed inset-x-4 bottom-4 z-50 mx-auto max-w-lg rounded-2xl border border-amber-300/25 bg-[#171827]/95 p-5 shadow-2xl shadow-black/50 backdrop-blur-xl sm:inset-x-auto sm:right-6 sm:bottom-6">
+          <div className="flex items-start gap-3">
+            <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-amber-300/10 text-amber-200">
+              {pendingAction.kind === "website" ? (
+                <ExternalLink className="size-4" />
+              ) : (
+                <WalletCards className="size-4" />
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-white">
+                {pendingAction.kind === "website"
+                  ? "Open this website?"
+                  : "Prepare recharge flow?"}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-white/50">
+                {pendingAction.kind === "website" ? (
+                  <>
+                    {pendingAction.reason}
+                    <br />
+                    <span className="break-all font-mono text-amber-200/80">
+                      {pendingAction.url}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    JUNI requested a safe recharge intent for{" "}
+                    <span className="font-semibold text-amber-200">
+                      PKR {pendingAction.amount.toLocaleString()}
+                    </span>
+                    . No payment will be made yet.
+                  </>
+                )}
+              </p>
+            </div>
+            <button
+              onClick={declineAction}
+              className="text-white/35 hover:text-white"
+              aria-label="Cancel action"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+          <div className="mt-4 flex gap-2">
+            <button
+              onClick={() => void approveAction()}
+              disabled={rechargeMutation.isPending}
+              className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-amber-300 px-4 py-2.5 text-xs font-semibold text-[#17120a] transition-transform active:scale-[0.98]"
+            >
+              {rechargeMutation.isPending ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Check className="size-3.5" />
+              )}{" "}
+              Approve safely
+            </button>
+            <button
+              onClick={declineAction}
+              className="rounded-xl border border-white/10 px-4 py-2.5 text-xs text-white/55 hover:bg-white/[0.05]"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
