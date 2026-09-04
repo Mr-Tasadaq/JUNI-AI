@@ -26,4 +26,8 @@
 - [x] Make the voice entry surface a real speaking state or remove that claim, with an explicit reconnect control and transition.
 - [x] Add component tests for the VoiceSystem card and CapabilityBoard rendering/interaction states.
 - [x] Save a new checkpoint after the verified voice-board milestone.
-- [ ] Synchronize the latest voice-system and capability-board checkpoint to the JUNI GitHub repository and verify the remote commit.
+- [x] Synchronize the latest voice-system and capability-board checkpoint to the JUNI GitHub repository and verify the remote commit.
+- [x] Research the supplied Neural Networks and Deep Learning material and cross-check schema-relevant findings with authoritative sources.
+- [x] Design a research-backed enhancement to JUNI’s human-brain-inspired architecture schema without implying consciousness or biological replication.
+- [x] Document the proposed schema, evidence, tradeoffs, and incremental implementation roadmap.
+- [ ] Synchronize the research-backed neural-schema milestone to the JUNI GitHub repository and verify the remote commit.

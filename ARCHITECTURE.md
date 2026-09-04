@@ -52,3 +52,7 @@ The workspace currently supports text conversations only. The protected upload s
 4. Add capability-aware model discovery, provider health status, and structured provider failure telemetry.
 5. Add research tools behind a named, permissioned tool registry with source citations and prompt-injection defenses.
 6. Connect the voice card to the approved transcription bridge and realtime transport/session subsystem without coupling it to text chat.
+
+## Neural-inspired schema research milestone
+
+A design proposal is recorded in `NEURAL_SCHEMA_PROPOSAL.md`, grounded in the supplied *Neural Networks and Deep Learning* material and cross-checked against research on continual learning and memory-augmented neural networks. The proposal separates observations, working context, episodic experience, semantic knowledge, user-approved memory, retrieval traces, learning candidates, and evaluation evidence. It explicitly avoids treating product memory as model retraining or implying consciousness. This milestone is documentation-only; the first implementation slice should be `observations`, `experiences`, and `retrievalTraces` after retention, privacy, and deletion requirements are confirmed.
