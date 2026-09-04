@@ -9,14 +9,18 @@ import {
 } from "@shared/juni";
 import { z } from "zod";
 import { COOKIE_NAME } from "@shared/const";
+import type { UserId } from "@shared/types";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { ENV } from "./_core/env";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 
 const amountSchema = z.number().finite().min(100).max(100_000);
-const personaSchema = z.enum(["juni", "sona"] satisfies [PersonaId, PersonaId]);
-const languageSchema = z.enum(
+export const personaSchema = z.enum(["juni", "sona"] satisfies [
+  PersonaId,
+  PersonaId,
+]);
+export const languageSchema = z.enum(
   SUPPORTED_LANGUAGES.map(language => language.id) as [
     LanguageId,
     ...LanguageId[],
@@ -168,33 +172,45 @@ export const appRouter = router({
       }),
   }),
   account: router({
-    dashboard: protectedProcedure.query(({ ctx }) => ({
-      user: { id: ctx.user.id, name: ctx.user.name, email: ctx.user.email },
-      currency: "PKR",
-      balance: null,
-      status: "provider_not_connected" as const,
-      message:
-        "Connect a verified billing provider before showing or changing account balance.",
-    })),
-    getRechargeInfo: protectedProcedure.query(({ ctx }) => ({
-      userId: ctx.user.id,
-      currency: "PKR",
-      status: "not_connected" as const,
-      balance: null,
-      message:
-        "No billing provider is connected yet. This read-only preview will not expose or invent account data.",
-    })),
+    dashboard: protectedProcedure.query(({ ctx }) => {
+      const userId: UserId = ctx.user.id;
+
+      return {
+        user: { id: userId, name: ctx.user.name, email: ctx.user.email },
+        currency: "PKR",
+        balance: null,
+        status: "provider_not_connected" as const,
+        message:
+          "Connect a verified billing provider before showing or changing account balance.",
+      };
+    }),
+    getRechargeInfo: protectedProcedure.query(({ ctx }) => {
+      const userId: UserId = ctx.user.id;
+
+      return {
+        userId,
+        currency: "PKR",
+        status: "not_connected" as const,
+        balance: null,
+        message:
+          "No billing provider is connected yet. This read-only preview will not expose or invent account data.",
+      };
+    }),
     startRecharge: protectedProcedure
       .input(z.object({ amount: amountSchema }))
-      .mutation(({ input, ctx }) => ({
-        status: "awaiting_provider" as const,
-        amount: input.amount,
-        currency: "PKR" as const,
-        userId: ctx.user.id,
-        checkoutUrl: null,
-        message:
-          "Recharge intent recorded in the safe preview layer. A verified payment provider must be connected before checkout can begin.",
-      })),
+      .mutation(({ input, ctx }) => {
+        const userId: UserId = ctx.user.id;
+
+        return {
+          status: "awaiting_provider" as const,
+          amount: input.amount,
+          currency: "PKR" as const,
+          userId,
+          checkoutUrl: null,
+          message:
+            "Recharge intent recorded in the safe preview layer. A verified payment provider must be connected before checkout can begin.",
+        };
+      }),
   }),
 });
 

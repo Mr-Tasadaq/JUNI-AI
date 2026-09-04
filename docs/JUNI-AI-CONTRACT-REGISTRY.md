@@ -17,9 +17,12 @@ The target `packages/shared` directory does not exist. Current shared contracts 
 | `NotFoundError` | `shared/_core/errors.ts` | Function | Creates `HttpError(404, msg)` | Available; no current direct route usage found |
 | Database type exports | `shared/types.ts` | `export type *` | Re-exports Drizzle-derived database types | Server/shared imports |
 | Shared errors | `shared/types.ts` | `export *` | Re-exports shared error module | Server/shared imports |
+| `UserId` | `shared/contracts/identity.ts` | Type alias | Canonical name for the Drizzle-derived `users.id` primary key | Account API output in `server/routers.ts` |
 | Auth/OAuth constants | `shared/const.ts` | Named constants/types | Cookie names, OAuth state, shared error messages, timeout values, OAuth state type | Client OAuth and server auth |
 
 The current shared directory also contains `shared/juni.ts`, which is the canonical AI identity/tool contract file for the current implementation.
+
+`UserId` is intentionally a type alias for `User["id"]`, where `User` is inferred from `drizzle/schema.ts`. The current database primary key is an auto-incremented MySQL integer. This preserves the schema as the concrete identifier authority while giving consuming domain code one canonical identity name.
 
 ## 2. AI Identity Contracts
 
@@ -493,7 +496,7 @@ The page owns static audit finding data and filter state; it is not a server-bac
 |---|---|---|
 | `PersonaId` | CANONICAL | Defined once in `shared/juni.ts`; server and client import it. |
 | `LanguageId` | CANONICAL | Derived once from `SUPPORTED_LANGUAGES`; server and client import it. |
-| `User` | CANONICAL | Derived from `drizzle/schema.ts`; shared types re-export it. Test fixtures manually construct compatible objects but do not redefine a named user type except `AuthenticatedUser = NonNullable<TrpcContext["user"]>`. |
+| `User` / `UserId` | CANONICAL | `User` is derived from `drizzle/schema.ts`; `UserId` in `shared/contracts/identity.ts` aliases `User["id"]` without duplicating the numeric key strategy. Shared types re-export both. Test fixtures manually construct compatible users but do not redefine a named user type except `AuthenticatedUser = NonNullable<TrpcContext["user"]>`. |
 | Tool declarations | CANONICAL + provider-shape coupling | `safeLiveToolDeclarations` is defined once, but it is already shaped as OpenAI Realtime declarations in shared code. |
 | File metadata | POTENTIAL DUPLICATE | `name`, `mimeType`, and `dataUrl` exist as a tRPC input shape, while Forge storage returns `{ key, url }`; no unified file domain contract exists. |
 | Account status | POTENTIAL DUPLICATE | Dashboard uses `provider_not_connected`, recharge info uses `not_connected`, and recharge intent uses `awaiting_provider`. These are separate safe-preview outputs without a shared status union. |
@@ -533,7 +536,7 @@ The current canonical definitions are:
 | Persona identity and language values | `shared/juni.ts` |
 | Safe Realtime tools | `shared/juni.ts` |
 | API procedure inputs and outputs | `server/routers.ts` via inferred `AppRouter` |
-| Authenticated user/database type | `drizzle/schema.ts` via inferred `User` |
+| Authenticated user/database type | `drizzle/schema.ts` via inferred `User`; `shared/contracts/identity.ts` exposes the derived `UserId` name |
 | Auth context | `server/_core/context.ts` via `TrpcContext` |
 | Protected/admin authorization middleware | `server/_core/trpc.ts` |
 | Error base/convenience contracts | `shared/_core/errors.ts` |
@@ -586,6 +589,7 @@ Canonical-contract rule:
 | `AppRouter` | `server/routers.ts` | tRPC client/server type boundary | No; response data may be sensitive |
 | `TrpcContext` | `server/_core/context.ts` | protected/admin procedures, tests | Contains user/session request context |
 | `User` | `drizzle/schema.ts` | server context, DB helpers, shared type exports | Yes; user identity data |
+| `UserId` | `shared/contracts/identity.ts` | account API output, shared type consumers | No; identifier type only |
 | `HttpError` | `shared/_core/errors.ts` | SDK/server error paths | May carry sensitive messages if misused |
 | `AIChatBox.Message` | `client/src/components/AIChatBox.tsx` | AIChatBox consumers | User content; privacy-sensitive |
 | `SessionStatus` | `client/src/pages/Home.tsx` | Home UI state | No |
@@ -598,10 +602,11 @@ Canonical-contract rule:
 | Contract area | Existing coverage |
 |---|---|
 | Persona values | `server/juni.tools.test.ts` checks distinct genders and voice names. Full field equality is not tested. |
-| Language values | No dedicated test found; language schema is exercised only indirectly by TypeScript/runtime wiring. |
-| Tool definitions | `server/juni.tools.test.ts` checks exact three-tool name allowlist. Parameters and confirmation semantics are not fully asserted. |
+| Language values | `server/juni.tools.test.ts` checks canonical language IDs and Zod acceptance/rejection. |
+| Tool definitions | `server/juni.tools.test.ts` checks exact three-tool name allowlist and required parameter structure. Confirmation semantics remain a UI/runtime behavior. |
+| `UserId` | `server/identity.contract.test.ts` proves type equality with `User["id"]` and verifies account output derives the authenticated context identifier. |
 | Authorization | `server/auth.logout.test.ts` checks logout cookie clearing; protected/admin rejection paths do not have dedicated tests. |
-| API input validation | `server/juni.tools.test.ts` checks recharge amount boundaries. File/persona/language schema tests were not found. |
+| API input validation | `server/juni.tools.test.ts` checks recharge amount boundaries plus persona and language acceptance/rejection. File schema tests were not found. |
 | Error behavior | `server/orchestration.test.ts` checks empty provider response rejection; shared `HttpError` factories have no direct tests. |
 | Voice states | `client/src/lib/voiceState.test.ts` checks valid/invalid state transitions and labels. |
 | Workspace status | `client/src/lib/workspaceStatus.test.ts` checks retryable creation error and neutral state. |
@@ -646,12 +651,14 @@ The current repository has examples of this separation, but also has leakage to 
 
 ## Validation Record
 
-The required validation commands were run after inspection:
+The latest Section 14 validation commands passed after the `UserId` contract implementation:
 
 ```text
+Prettier scoped source/new-document check → PASS
+git diff --check → PASS
 pnpm check  → PASS
-pnpm test   → PASS (3 files, 8 tests)
+pnpm test   → PASS (4 files, 11 tests)
 pnpm build  → PASS
 ```
 
-The build emitted a chunk-size warning but completed successfully. No application behavior was changed during this contract-inventory step.
+The production build completed successfully. The contract change did not add a database migration, a database table, or a new provider integration.

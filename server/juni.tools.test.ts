@@ -3,8 +3,9 @@ import {
   JUNI_PERSONAS,
   REALTIME_MODEL,
   safeLiveToolDeclarations,
+  SUPPORTED_LANGUAGES,
 } from "../shared/juni";
-import { appRouter } from "./routers";
+import { appRouter, languageSchema, personaSchema } from "./routers";
 import type { TrpcContext } from "./_core/context";
 
 function createContext(): TrpcContext {
@@ -35,12 +36,46 @@ describe("JUNI Live contracts", () => {
     expect(REALTIME_MODEL).toBe("gpt-realtime-2.1");
   });
 
-  it("exposes only the three explicitly allowlisted safe tools", () => {
+  it("accepts only canonical persona and language identifiers", () => {
+    expect(personaSchema.safeParse("juni").success).toBe(true);
+    expect(personaSchema.safeParse("sona").success).toBe(true);
+    expect(personaSchema.safeParse("unknown").success).toBe(false);
+
+    expect(SUPPORTED_LANGUAGES.map(language => language.id)).toEqual([
+      "en",
+      "ur",
+      "hi",
+      "ar",
+      "es",
+    ]);
+    expect(languageSchema.safeParse("ur").success).toBe(true);
+    expect(languageSchema.safeParse("unknown").success).toBe(false);
+  });
+
+  it("exposes only the three structured allowlisted safe tools", () => {
     expect(safeLiveToolDeclarations.map(tool => tool.name)).toEqual([
       "open_website",
       "get_recharge_info",
       "start_recharge",
     ]);
+    expect(safeLiveToolDeclarations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "open_website",
+          parameters: expect.objectContaining({
+            required: ["url", "reason"],
+          }),
+        }),
+        expect.objectContaining({
+          name: "get_recharge_info",
+          parameters: { type: "object", properties: {} },
+        }),
+        expect.objectContaining({
+          name: "start_recharge",
+          parameters: expect.objectContaining({ required: ["amount"] }),
+        }),
+      ])
+    );
   });
 });
 
