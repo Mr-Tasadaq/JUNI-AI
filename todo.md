@@ -17,4 +17,4 @@
 - [x] Add an explicit conversation-creation error state with a clear retry action near the creation controls.
 - [x] Add a test covering conversation-creation failure UI behavior and retry flow.
 - [x] Add a component-level Home test that simulates conversation creation failure and verifies the Retry create interaction.
-- [ ] Upload the current JUNI workspace checkpoint to https://github.com/Mr-Tasadaq/JUNI-AI without committing secrets or overwriting unrelated content.
+- [x] Upload the current JUNI workspace checkpoint to https://github.com/Mr-Tasadaq/JUNI-AI without committing secrets or overwriting unrelated content.
