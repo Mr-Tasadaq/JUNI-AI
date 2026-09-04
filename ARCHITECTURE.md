@@ -6,15 +6,17 @@
 
 ## Implemented architecture
 
-| Boundary                 | Current implementation                                                                                                                                        | Truthful status                                                                    |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| Authentication           | Scaffold-provided Manus OAuth and authenticated client session hook                                                                                           | Implemented by scaffold and used by the workspace                                  |
-| Workspace UI             | Responsive React page with desktop sidebar, mobile stacking, accessible buttons, empty/loading/error states, and status disclosures                           | Implemented and visually checked at 1280px and 375px widths                        |
-| Conversation persistence | `conversations` and `messages` tables with user IDs, timestamps, role/status fields, and indexes                                                              | Implemented; migration applied                                                     |
-| Typed API                | Protected tRPC procedures for listing/creating conversations, reading messages, sending messages, and registering file metadata                               | Implemented                                                                        |
-| AI boundary              | `server/orchestration.ts` converts trusted system guidance, user input, history, and untrusted context into a provider request                                | Implemented and unit tested                                                        |
-| Provider mediation       | Existing server-only `invokeLLM` helper is called from the server orchestration layer                                                                         | Implemented; browser receives only the resulting assistant message                 |
-| Object storage           | Protected `files.upload` calls server-only `storagePut`, generates a user-scoped key, hashes bytes, and persists `storedFiles` metadata separately from bytes | Upload service implemented; upload UI and content-processing pipeline are deferred |
+| Boundary                 | Current implementation                                                                                                                                                             | Truthful status                                                                             |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Authentication           | Scaffold-provided Manus OAuth and authenticated client session hook                                                                                                                | Implemented by scaffold and used by the workspace                                           |
+| Workspace UI             | Responsive React page with desktop sidebar, mobile stacking, accessible buttons, empty/loading/error states, and status disclosures                                                | Implemented and visually checked at 1280px and 375px widths                                 |
+| Conversation persistence | `conversations` and `messages` tables with user IDs, timestamps, role/status fields, and indexes                                                                                   | Implemented; migration applied                                                              |
+| Typed API                | Protected tRPC procedures for listing/creating conversations, reading messages, sending messages, and registering file metadata                                                    | Implemented                                                                                 |
+| AI boundary              | `server/orchestration.ts` converts trusted system guidance, user input, history, and untrusted context into a provider request                                                     | Implemented and unit tested                                                                 |
+| Provider mediation       | Existing server-only `invokeLLM` helper is called from the server orchestration layer                                                                                              | Implemented; browser receives only the resulting assistant message                          |
+| Object storage           | Protected `files.upload` calls server-only `storagePut`, generates a user-scoped key, hashes bytes, and persists `storedFiles` metadata separately from bytes                      | Upload service implemented; upload UI and content-processing pipeline are deferred          |
+| Voice system             | Client-side microphone permission/session card with explicit states for disconnected, connecting, connected, listening, processing, speaking, interrupted, reconnecting, and error | Entry experience implemented; transcription and realtime response transport remain deferred |
+| Capability board         | Three-column board for examples, available capabilities, and limitations, modeled on the supplied reference’s information architecture                                             | Implemented responsively without copying ChatGPT branding                                   |
 
 ## Security decisions
 
@@ -26,15 +28,15 @@ The current send procedure persists the user message before invoking the model. 
 
 The following checks were actually run in the project workspace:
 
-| Check                          | Result                                                                                            |
-| ------------------------------ | ------------------------------------------------------------------------------------------------- |
-| `pnpm check`                   | Passed with no TypeScript errors                                                                  |
-| `pnpm test` | Passed: 6 test files, 12 tests |
-| `pnpm build`                   | Passed; Vite emitted a non-blocking large-chunk warning from the existing markdown/diagram bundle |
-| Database migration generation  | Passed; `drizzle/0001_motionless_whistler.sql` generated                                          |
-| Database migration application | Passed; four tables and five indexes were created                                                 |
-| Desktop visual check           | Passed at 1280×720; authenticated workspace rendered with branded hierarchy and status messaging  |
-| Mobile visual check            | Passed at 375×812; sidebar stacks above workspace and primary actions remain visible              |
+| Check                          | Result                                                                                                                  |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `pnpm check`                   | Passed with no TypeScript errors                                                                                        |
+| `pnpm test`                    | Passed: 9 test files, 16 tests                                                                                          |
+| `pnpm build`                   | Passed; Vite emitted a non-blocking large-chunk warning from the existing markdown/diagram bundle                       |
+| Database migration generation  | Passed; `drizzle/0001_motionless_whistler.sql` generated                                                                |
+| Database migration application | Passed; four tables and five indexes were created                                                                       |
+| Desktop visual check           | Passed at 1280×720; authenticated workspace rendered with branded hierarchy and status messaging                        |
+| Mobile visual check            | Passed at 375×812; sidebar stacks above workspace, voice entry remains reachable, and capability cards stack vertically |
 
 ## Known risks and limitations
 
@@ -49,4 +51,4 @@ The workspace currently supports text conversations only. The protected upload s
 3. Add document extraction and provenance records before exposing uploaded content to the AI boundary.
 4. Add capability-aware model discovery, provider health status, and structured provider failure telemetry.
 5. Add research tools behind a named, permissioned tool registry with source citations and prompt-injection defenses.
-6. Add realtime voice as a separate transport/session subsystem rather than coupling it to text chat.
+6. Connect the voice card to the approved transcription bridge and realtime transport/session subsystem without coupling it to text chat.

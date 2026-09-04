@@ -1,6 +1,8 @@
 import React from "react";
 import { startLogin } from "@/const";
 import { AIChatBox, type Message as ChatMessage } from "@/components/AIChatBox";
+import CapabilityBoard from "@/components/CapabilityBoard";
+import VoiceSystem from "@/components/VoiceSystem";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { getWorkspaceStatus } from "@/lib/workspaceStatus";
@@ -10,8 +12,11 @@ import { useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   CircleUserRound,
   LogOut,
+  Mic,
   Plus,
   ShieldCheck,
   Sparkles,
@@ -29,6 +34,7 @@ export default function Home() {
   const [selectedConversationId, setSelectedConversationId] = useState<
     number | null
   >(null);
+  const [showVoiceSystem, setShowVoiceSystem] = useState(false);
   const conversationsQuery = trpc.conversations.list.useQuery(undefined, {
     enabled: isAuthenticated,
   });
@@ -269,6 +275,36 @@ export default function Home() {
               Uploads planned, not yet enabled
             </span>
           </div>
+          <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-slate-950">
+                Hands-free mode
+              </p>
+              <p className="text-xs leading-5 text-slate-500">
+                Microphone permission is separate from AI response generation.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              className="w-fit rounded-xl"
+              onClick={() => setShowVoiceSystem(current => !current)}
+              aria-expanded={showVoiceSystem}
+              aria-controls="voice-system-panel"
+            >
+              <Mic className="size-4" />
+              {showVoiceSystem ? "Hide voice system" : "Open voice system"}
+              {showVoiceSystem ? (
+                <ChevronUp className="size-4" />
+              ) : (
+                <ChevronDown className="size-4" />
+              )}
+            </Button>
+          </div>
+          {showVoiceSystem && (
+            <div id="voice-system-panel" className="mb-5">
+              <VoiceSystem />
+            </div>
+          )}
           <div className="flex-1 rounded-[1.75rem] border border-white/80 bg-white/75 p-2 shadow-[0_20px_60px_rgba(42,70,65,0.08)] backdrop-blur sm:p-4">
             {messagesQuery.isError ? (
               <div className="grid min-h-[55vh] place-items-center p-8 text-center">
@@ -336,6 +372,7 @@ export default function Home() {
               </div>
             )}
           </div>
+          <CapabilityBoard />
           <div
             className={cn(
               "mt-4 flex items-start gap-2 rounded-xl px-3 py-2.5 text-xs leading-5",

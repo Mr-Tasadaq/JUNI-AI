@@ -18,3 +18,12 @@
 - [x] Add a test covering conversation-creation failure UI behavior and retry flow.
 - [x] Add a component-level Home test that simulates conversation creation failure and verifies the Retry create interaction.
 - [x] Upload the current JUNI workspace checkpoint to https://github.com/Mr-Tasadaq/JUNI-AI without committing secrets or overwriting unrelated content.
+- [x] Design and implement a responsive capability board inspired by the supplied ChatGPT reference while preserving JUNI branding.
+- [x] Add an authenticated voice-system entry point with honest connection, listening, processing, speaking, interruption, reconnect, and error states.
+- [x] Add transparent board copy distinguishing implemented, planned, and unavailable capabilities.
+- [x] Add unit/component tests for voice-state transitions and capability-board interaction states.
+- [x] Verify desktop/mobile rendering and save the next JUNI checkpoint.
+- [x] Make the voice entry surface a real speaking state or remove that claim, with an explicit reconnect control and transition.
+- [x] Add component tests for the VoiceSystem card and CapabilityBoard rendering/interaction states.
+- [x] Save a new checkpoint after the verified voice-board milestone.
+- [ ] Synchronize the latest voice-system and capability-board checkpoint to the JUNI GitHub repository and verify the remote commit.
