@@ -1,6 +1,6 @@
 # JUNI AI
 
-**JUNI AI** is a mobile-first, voice-first personal AI companion powered by the Gemini Live API. It contains two switchable assistant personalities:
+**JUNI AI** is a mobile-first, voice-first personal AI companion powered by the **OpenAI Realtime API**. It contains two switchable assistant personalities:
 
 - **JUNI AI — Male:** confident, calm, clever, supportive, and lightly teasing.
 - **SONA AI — Female:** warm, playful, expressive, witty, and emotionally responsive.
@@ -8,23 +8,26 @@
 The primary interaction is:
 
 ```text
-VOICE IN → GEMINI LIVE THINKING → NATIVE VOICE OUT
+VOICE IN → OPENAI REALTIME → NATIVE VOICE OUT
 ```
 
-This is not a conventional text-chat application. The main conversation uses one continuous Gemini Live session with microphone input, native streamed audio output, interruption handling, and safe function calls.
+The application uses OpenAI Realtime over browser WebRTC rather than a conventional text-chat interface. It also includes conversation history, multilingual controls, file/image context, local voice recording/export, an account dashboard, and confirmation-gated tools.
 
 ## Current implementation
 
 - React + TypeScript + Vite + Tailwind CSS
 - Full-stack Express + tRPC + Manus OAuth foundation
-- Official `@google/genai` SDK
-- Model: `gemini-3.1-flash-live-preview`
-- Server-side `GEMINI_API_KEY` protection
-- Short-lived, single-use Gemini ephemeral Live tokens
-- PCM16 mono microphone input at 16 kHz
-- Native PCM16 audio output at 24 kHz
-- JUNI/SONA personality switching without restarting the application
-- Safe, confirmation-gated website and recharge tools
+- OpenAI Realtime model: `gpt-realtime-2.1`
+- Server-side `OPENAI_API_KEY` protection
+- Short-lived OpenAI Realtime client secrets
+- WebRTC microphone input and native audio output
+- JUNI/SONA personality switching
+- English, Urdu, Hindi, Arabic, and Spanish language controls
+- Local browser conversation history
+- Protected OpenAI file/image analysis for image, PDF, and text context
+- Local WebM voice recording and download
+- Account/recharge dashboard in safe preview mode
+- Confirmation-gated website and recharge tools
 - Original research files, Drizzle migrations, and `voice.zip` preserved
 
 ## Quick start
@@ -32,7 +35,7 @@ This is not a conventional text-chat application. The main conversation uses one
 ```bash
 pnpm install
 cp .env.example .env
-# Add GEMINI_API_KEY and the required Manus OAuth/database values to .env
+# Add OPENAI_API_KEY and the required Manus OAuth/database values to .env
 pnpm dev
 ```
 
@@ -46,33 +49,35 @@ pnpm build
 
 ## Voice configuration
 
-The complete file-by-file setup is documented in **[VOICE_SETUP.md](./VOICE_SETUP.md)**. It covers environment variables, Gemini token brokering, personality configuration, microphone/audio formats, tool confirmation, local setup, troubleshooting, and the production checklist.
+The complete file-by-file setup is documented in **[VOICE_SETUP.md](./VOICE_SETUP.md)**. It covers OpenAI WebRTC, ephemeral client secrets, personality configuration, multilingual voice, file/image context, recording/export, account tools, safety confirmation, troubleshooting, and the production checklist.
 
-The two core files are:
+The core files are:
 
-- `shared/juni.ts` — model, JUNI/SONA voice names, system instructions, and the safe tool allowlist.
-- `client/src/pages/Home.tsx` — microphone capture, Gemini Live connection, PCM conversion, output scheduling, interruption, and UI state.
+- `shared/juni.ts` — OpenAI Realtime model, JUNI/SONA personas, language options, and safe tools.
+- `server/routers.ts` — protected OpenAI client-secret broker, file analysis, and account procedures.
+- `client/src/pages/Home.tsx` — WebRTC voice session, history, multilingual controls, file upload, recorder, dashboard, and action confirmation.
 
 ## Security model
 
-The long-lived Gemini API key is never sent to the browser. An authenticated user calls `live.createEphemeralToken` on the server. The server creates a constrained Gemini token limited to the Live model, audio output, session resumption, and the allowlisted tools. The browser uses only that short-lived token to connect directly to Gemini for lower latency.
+The long-lived OpenAI API key is never sent to the browser. An authenticated user calls `realtime.createClientSecret` on the server. The server creates a short-lived OpenAI Realtime client secret with a hashed safety identifier and returns only that temporary credential to the browser. The browser then negotiates WebRTC directly with OpenAI.
 
 High-impact actions are not automatic:
 
 - website opening requires explicit user approval;
 - recharge amounts are validated and require explicit approval;
 - no payment provider is connected by default;
+- file/image content is treated as untrusted context;
 - the app never claims a payment succeeded without a verified provider response;
-- webpage/model instructions cannot override the tool policy.
+- API keys are never committed to GitHub or exposed through `VITE_` variables.
 
 ## Repository structure
 
 ```text
-client/src/pages/Home.tsx       Voice-first JUNI/SONA application
+client/src/pages/Home.tsx       OpenAI Realtime voice application and feature surface
 client/src/pages/Audit.tsx      Preserved security audit dashboard
 client/src/App.tsx              Routes: / and /audit
-shared/juni.ts                  Shared personas, model, and safe tools
-server/routers.ts               Protected ephemeral token and safe tools
+shared/juni.ts                  Personas, model, languages, and safe tools
+server/routers.ts               OpenAI secret broker, file analysis, account tools
 server/_core/env.ts             Server environment access
 server/juni.tools.test.ts       Voice safety and contract tests
 voice.zip                       Optional JUNI/SONA preview audio archive
@@ -84,8 +89,8 @@ research/                       Existing research sources
 
 ## Voice archive
 
-`voice.zip` contains `voice/Juni Ai.mp3` and `voice/SONA AI.mp3`. These are optional local identity/reference previews. Production voice output is generated by Gemini Live using the selected native voice configuration in `shared/juni.ts`.
+`voice.zip` contains `voice/Juni Ai.mp3` and `voice/SONA AI.mp3`. These are optional local identity/reference previews. Production voice output is generated by OpenAI Realtime using the native `cedar` and `marin` voice configuration in `shared/juni.ts`.
 
 ## Important configuration note
 
-Use `GEMINI_API_KEY`, not `VITE_GEMINI_API_KEY`. Variables prefixed with `VITE_` may be bundled into browser JavaScript. Never commit `.env`, paste credentials into GitHub issues, or include tokens in screenshots.
+Use `OPENAI_API_KEY`, not `VITE_OPENAI_API_KEY`. Variables prefixed with `VITE_` may be bundled into browser JavaScript. Never commit `.env`, paste credentials into GitHub issues, or include API keys in screenshots.

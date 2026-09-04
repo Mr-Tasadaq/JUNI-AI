@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   JUNI_PERSONAS,
-  LIVE_MODEL,
+  REALTIME_MODEL,
   safeLiveToolDeclarations,
 } from "../shared/juni";
 import { appRouter } from "./routers";
@@ -28,11 +28,11 @@ function createContext(): TrpcContext {
 }
 
 describe("JUNI Live contracts", () => {
-  it("keeps both assistants distinct and audio-only", () => {
+  it("keeps both assistants distinct and OpenAI Realtime-ready", () => {
     expect(JUNI_PERSONAS.juni.gender).toBe("Male");
     expect(JUNI_PERSONAS.sona.gender).toBe("Female");
     expect(JUNI_PERSONAS.juni.voiceName).not.toBe(JUNI_PERSONAS.sona.voiceName);
-    expect(LIVE_MODEL).toBe("gemini-3.1-flash-live-preview");
+    expect(REALTIME_MODEL).toBe("gpt-realtime-2.1");
   });
 
   it("exposes only the three explicitly allowlisted safe tools", () => {
@@ -47,7 +47,7 @@ describe("JUNI Live contracts", () => {
 describe("safe recharge tools", () => {
   it("returns a non-billing preview intent and never a checkout URL", async () => {
     const caller = appRouter.createCaller(createContext());
-    const result = await caller.live.startRecharge({ amount: 500 });
+    const result = await caller.account.startRecharge({ amount: 500 });
 
     expect(result).toMatchObject({
       status: "awaiting_provider",
@@ -59,9 +59,11 @@ describe("safe recharge tools", () => {
 
   it("rejects amounts outside the guarded range", async () => {
     const caller = appRouter.createCaller(createContext());
-    await expect(caller.live.startRecharge({ amount: 50 })).rejects.toThrow();
     await expect(
-      caller.live.startRecharge({ amount: 100001 })
+      caller.account.startRecharge({ amount: 50 })
+    ).rejects.toThrow();
+    await expect(
+      caller.account.startRecharge({ amount: 100001 })
     ).rejects.toThrow();
   });
 });
