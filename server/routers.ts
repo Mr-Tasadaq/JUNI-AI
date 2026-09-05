@@ -246,7 +246,7 @@ export const appRouter = router({
         fileAnalysis: "protected" as const,
         billing: "preview_only" as const,
         durableMemory: "not_implemented" as const,
-        auditLog: "not_implemented" as const,
+        auditLog: "implemented" as const,
       },
     })),
     users: adminProcedure.query(async ({ ctx }) => {
@@ -280,7 +280,8 @@ export const appRouter = router({
         try {
           const updatedUser = await db.changeUserRoleForAdmin(
             input.userId,
-            input.role
+            input.role,
+            ctx.user.id
           );
           if (!updatedUser) {
             throw new TRPCError({
@@ -304,6 +305,25 @@ export const appRouter = router({
           throw new TRPCError({
             code: "INTERNAL_SERVER_ERROR",
             message: "Administrative user data is temporarily unavailable.",
+          });
+        }
+      }),
+    auditEvents: adminProcedure
+      .input(
+        z
+          .object({ limit: z.number().int().min(1).max(100).optional() })
+          .optional()
+      )
+      .query(async ({ input, ctx }) => {
+        try {
+          return await db.listAuditEventsForAdmin(input?.limit);
+        } catch (error) {
+          console.error("[Admin] Audit event list failed", {
+            actorUserId: ctx.user.id,
+          });
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Administrative audit data is temporarily unavailable.",
           });
         }
       }),

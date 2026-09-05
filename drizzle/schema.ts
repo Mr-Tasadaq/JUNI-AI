@@ -1,4 +1,13 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import {
+  index,
+  int,
+  json,
+  mysqlEnum,
+  mysqlTable,
+  text,
+  timestamp,
+  varchar,
+} from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -22,7 +31,30 @@ export const users = mysqlTable("users", {
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
 });
 
+export const auditEvents = mysqlTable(
+  "auditEvents",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    actorUserId: int("actorUserId").notNull(),
+    action: varchar("action", { length: 128 }).notNull(),
+    targetUserId: int("targetUserId"),
+    occurredAt: timestamp("occurredAt").defaultNow().notNull(),
+    metadata: json("metadata").notNull(),
+  },
+  table => ({
+    occurredAtIdx: index("audit_events_occurred_at_idx").on(table.occurredAt),
+    actorIdx: index("audit_events_actor_idx").on(
+      table.actorUserId,
+      table.occurredAt
+    ),
+    actionIdx: index("audit_events_action_idx").on(
+      table.action,
+      table.occurredAt
+    ),
+  })
+);
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
-
-// TODO: Add your tables here
+export type AuditEvent = typeof auditEvents.$inferSelect;
+export type InsertAuditEvent = typeof auditEvents.$inferInsert;

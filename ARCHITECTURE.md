@@ -4,7 +4,7 @@
 
 **Status: PARTIAL.** JUNI AI now has two separated application experiences inside one shared platform: an authenticated user panel at `/` and a server-authorized admin control center at `/admin`. The existing Manus OAuth/session foundation, OpenAI Realtime WebRTC flow, server-side provider boundary, and canonical JUNI/SONA persona contract remain intact. The first safe administration layer is **COMPLETE**: server-authorized user listing, safe user detail display, and confirmed role changes are implemented.
 
-The admin slice provides operational health, provider/model status, voice/persona inventory, truthful capability limits, and a user-management section. Destructive user deletion, account enable/disable, billing mutations, memory administration, durable audit events, storage quota controls, feature flags, and maintenance mutations remain deferred because the active repository does not yet have safe status/audit contracts for them.
+The admin slice provides operational health, provider/model status, voice/persona inventory, truthful capability limits, a user-management section, and a durable audit-event foundation for role changes. Destructive user deletion, account enable/disable, billing mutations, memory administration, storage quota controls, feature flags, and maintenance mutations remain deferred.
 
 ## Shared platform boundaries
 
@@ -93,18 +93,19 @@ The existing database role values are lowercase `user` and `admin`; these are th
 
 `protectedProcedure` rejects unauthenticated requests. `adminProcedure` rejects unauthenticated requests and authenticated users whose server-derived role is not `admin`. Current protected procedures are:
 
-| Procedure or route            | Authorization and ownership                                                                                                                                                       |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `realtime.createClientSecret` | Authenticated user only; safety identifier is derived from `ctx.user.openId`; persona and language are allowlisted.                                                               |
-| `files.analyze`               | Authenticated user only; analysis is ephemeral and provider credentials remain server-side.                                                                                       |
-| `account.dashboard`           | Authenticated user only; response identity is derived from `ctx.user.id`.                                                                                                         |
-| `account.getRechargeInfo`     | Authenticated user only; owner ID is server-derived.                                                                                                                              |
-| `account.startRecharge`       | Authenticated user only; amount is validated and owner ID is server-derived. It remains preview-only.                                                                             |
-| `admin.dashboard`             | Admin only; returns operational data only after server role verification.                                                                                                         |
-| `admin.users`                 | Admin only; returns a deliberately reduced user summary without `openId`, login method, credentials, or provider secrets.                                                         |
-| `admin.changeUserRole`        | Admin only; validates target ID and role, prevents self-demotion, updates the existing `users.role` column, and logs actor/target/role metadata to the server operational stream. |
-| `system.notifyOwner`          | Existing admin-only procedure.                                                                                                                                                    |
-| `GET /manus-storage/*`        | Authenticated and restricted to `users/{ctx.user.id}/` storage keys.                                                                                                              |
+| Procedure or route            | Authorization and ownership                                                                                                                                                           |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `realtime.createClientSecret` | Authenticated user only; safety identifier is derived from `ctx.user.openId`; persona and language are allowlisted.                                                                   |
+| `files.analyze`               | Authenticated user only; analysis is ephemeral and provider credentials remain server-side.                                                                                           |
+| `account.dashboard`           | Authenticated user only; response identity is derived from `ctx.user.id`.                                                                                                             |
+| `account.getRechargeInfo`     | Authenticated user only; owner ID is server-derived.                                                                                                                                  |
+| `account.startRecharge`       | Authenticated user only; amount is validated and owner ID is server-derived. It remains preview-only.                                                                                 |
+| `admin.dashboard`             | Admin only; returns operational data only after server role verification.                                                                                                             |
+| `admin.users`                 | Admin only; returns a deliberately reduced user summary without `openId`, login method, credentials, or provider secrets.                                                             |
+| `admin.changeUserRole`        | Admin only; validates target ID and role, prevents self-demotion, and atomically updates `users.role` with an append-only `user.role_changed` audit event derived from `ctx.user.id`. |
+| `admin.auditEvents`           | Admin only; returns a newest-first reduced DTO with event ID, actor, action, target, timestamp, and allowlisted role metadata.                                                        |
+| `system.notifyOwner`          | Existing admin-only procedure.                                                                                                                                                        |
+| `GET /manus-storage/*`        | Authenticated and restricted to `users/{ctx.user.id}/` storage keys.                                                                                                                  |
 
 A client-supplied owner ID cannot override `ctx.user.id`. Cross-user storage paths return a generic 404. Future conversations, messages, memory, projects, tasks, file metadata, and administrative mutations must add owner-scoped queries, input schemas, authorization checks, and cross-user tests before being exposed.
 
@@ -124,7 +125,7 @@ The authentication hardening work addressed the following findings:
 
 The short-lived Realtime client secret is intentionally delivered to an authenticated browser because WebRTC requires it. The long-lived `OPENAI_API_KEY`, Forge credentials, database credentials, and admin secrets remain server-only. No credentials are placed in URLs, query parameters, client storage, source code, screenshots, or rendered provider errors.
 
-Administrative mutations are intentionally limited in this slice. Since no durable audit-event table exists, role changes currently emit structured server operational logging but do not claim to provide a persistent audit log. Persistent administrative audit storage is the next security milestone. Consequential mutations beyond role changes must not be added without an auditable server-side operation contract.
+Administrative mutations are intentionally limited in this slice. `auditEvents` is a durable append-only application table. Role changes and their audit records are written inside one Drizzle transaction when the database supports the configured MySQL connection, so a successful role change is not reported if its audit write fails. Audit metadata is allowlisted to previous/new role values and excludes passwords, tokens, authorization headers, raw request bodies, and provider credentials. Audit reads are admin-only; no general audit update/delete procedures exist. Account deletion, account status, billing, memory, quota, feature-flag, and maintenance mutations remain **NOT IMPLEMENTED**.
 
 ## Tests added and maintained
 
@@ -140,6 +141,8 @@ The test suite covers:
 - Normal-user denial of user listing and role changes even when the frontend requests them.
 - Admin access to reduced user details without provider credentials.
 - Admin role change for another user.
+- Durable `user.role_changed` audit creation with server-derived actor identity.
+- Admin-only newest-first audit reading with reduced metadata.
 - Self-role-change prevention for administrators.
 - Client identity cannot override server identity.
 - Cross-user and unauthenticated storage-key denial.
@@ -155,15 +158,15 @@ The test suite covers:
 
 Validation is run from the real repository using the package scripts:
 
-| Check                 | Result                                                              |
-| --------------------- | ------------------------------------------------------------------- |
-| `pnpm format`          | Passed; unrelated formatter churn was reverted after inspection.    |
-| `pnpm check`           | Passed.                                                             |
-| `pnpm test`            | Passed: 8 test files, 31 tests.                                     |
+| Check              | Result                                                              |
+| ------------------ | ------------------------------------------------------------------- |
+| `pnpm format`      | Passed; unrelated formatter churn was reverted after inspection.    |
+| `pnpm check`       | Passed.                                                             |
+| `pnpm test`            | Passed: 9 test files, 34 tests.                                     |
 | `pnpm build`           | Passed; Vite emitted the existing non-blocking large-chunk warning. |
-| `git diff --check`     | Passed.                                                             |
+| `git diff --check` | Passed.                                                             |
 
-No database migration was created. The existing `users.role` column already supports the required USER/ADMIN model, and the new user-management procedures reuse it. No account-status field or audit-event table exists in the active schema.
+The durable audit schema is defined in `drizzle/schema.ts` and migration `drizzle/0002_durable_audit_events.sql`. Migration generation detected historical `conversations`, `messages`, and `storedFiles` artifacts that are absent from the active schema, so the generated destructive drops were rejected; the committed migration creates only `auditEvents`. The migration must be applied through the normal `pnpm db:push` workflow in an environment with the real `DATABASE_URL`; no database connection was available in this validation environment.
 
 ## Known limitations and next slices
 

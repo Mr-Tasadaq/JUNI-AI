@@ -5,6 +5,7 @@ import {
   Activity,
   ArrowLeft,
   CheckCircle2,
+  ClipboardList,
   Database,
   Gauge,
   LockKeyhole,
@@ -67,6 +68,10 @@ export default function AdminPanel() {
     enabled: isAdmin,
     retry: false,
   });
+  const auditEventsQuery = trpc.admin.auditEvents.useQuery(
+    { limit: 25 },
+    { enabled: isAdmin, retry: false }
+  );
   const utils = trpc.useUtils();
   const changeRoleMutation = trpc.admin.changeUserRole.useMutation({
     onSuccess: updatedUser => {
@@ -76,6 +81,7 @@ export default function AdminPanel() {
       });
       setPendingRoleChange(null);
       void utils.admin.users.invalidate();
+      void utils.admin.auditEvents.invalidate();
     },
     onError: error => {
       setFeedback({ type: "error", message: error.message });
@@ -246,7 +252,7 @@ export default function AdminPanel() {
                   </h2>
                   <p className="mt-1 text-xs text-white/40">
                     Role changes are server-authorized, non-destructive, and
-                    logged to the operational stream.
+                    recorded in the durable audit log.
                   </p>
                 </div>
                 <label className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/10 px-3 py-2 text-xs text-white/50">
@@ -359,9 +365,62 @@ export default function AdminPanel() {
               )}
               <p className="mt-4 text-[11px] text-white/30">
                 Account status is not shown because the current user schema has
-                no status field. Destructive deletion, billing mutations, and
-                persistent audit events remain unavailable.
+                no status field. Destructive deletion and billing mutations
+                remain unavailable.
               </p>
+            </section>
+
+            <section className="mt-6 rounded-2xl border border-white/10 bg-white/[0.035] p-5 sm:p-6">
+              <div className="flex items-center justify-between border-b border-white/10 pb-4">
+                <div>
+                  <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-cyan-200/60">
+                    Security events
+                  </p>
+                  <h2 className="mt-2 text-xl font-semibold">
+                    Recent audit log
+                  </h2>
+                  <p className="mt-1 text-xs text-white/40">
+                    Append-only records for sensitive administrative actions.
+                  </p>
+                </div>
+                <ClipboardList className="size-5 text-cyan-300" />
+              </div>
+              {auditEventsQuery.isPending ? (
+                <p className="mt-5 text-sm text-white/45">
+                  Loading audit events…
+                </p>
+              ) : auditEventsQuery.isError ? (
+                <p className="mt-5 text-sm text-rose-100">
+                  Audit data is unavailable. No event details were returned.
+                </p>
+              ) : auditEventsQuery.data?.length ? (
+                <div className="mt-5 space-y-3">
+                  {auditEventsQuery.data.map(event => (
+                    <div
+                      key={event.id}
+                      className="rounded-xl border border-white/10 bg-black/10 p-4"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-mono text-xs text-cyan-100">
+                          {event.action}
+                        </span>
+                        <span className="text-xs text-white/35">
+                          {formatDate(event.occurredAt)}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-xs text-white/50">
+                        Admin #{event.actorUserId} changed user #
+                        {event.targetUserId} from {event.metadata.previousRole}{" "}
+                        to {event.metadata.newRole}.
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-5 text-sm text-white/45">
+                  No audit events recorded yet.
+                </p>
+              )}
             </section>
 
             <section className="mt-6 grid gap-6 lg:grid-cols-[1.25fr_0.75fr]">
