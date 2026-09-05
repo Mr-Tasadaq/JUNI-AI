@@ -25,7 +25,9 @@ The browser starts Manus OAuth through `client/src/const.ts`. It creates a one-t
 
 `server/_core/context.ts` calls `sdk.authenticateRequest` for every request. `server/_core/sdk.ts` verifies the JWT and resolves the provider identity to the local database user. The authenticated application user is therefore established from the server-side session and database record, not from browser state. The authenticated user ID is `ctx.user.id`.
 
-The session cookie is request-aware: HTTPS uses `Secure` and `SameSite=None` for the existing OAuth deployment model, while local HTTP uses `SameSite=Lax`. The browser uses `credentials: include` and does not mirror session credentials into `localStorage` or `sessionStorage`. Long-lived provider credentials remain server environment values.
+The browser authentication path is strictly `Manus OAuth → server callback → HttpOnly session cookie → server verification → ctx.user`. HTTPS uses `Secure` and `SameSite=None` for the existing OAuth deployment model, while local HTTP uses `SameSite=Lax`. Browser requests use `credentials: include`; the application session JWT is not accepted from an `Authorization` header and is not mirrored into `localStorage` or `sessionStorage`. Long-lived provider credentials remain server environment values.
+
+Scheduled-task callbacks are a separate non-browser exception. They use the existing `cron_` session identity and task-bound provider verification path, with the task token arriving in the callback cookie. This flow is isolated from ordinary browser authentication; no general browser bearer-token fallback exists.
 
 ## User Panel architecture
 
@@ -102,6 +104,9 @@ Administrative mutations are intentionally limited in this slice. Since no durab
 The test suite covers:
 
 - Unauthenticated rejection of current protected procedures.
+- Valid HttpOnly cookie authentication and missing-cookie rejection.
+- Expired/malformed cookie rejection and rejection of arbitrary browser bearer tokens.
+- Continued scheduled-task authentication through the isolated cron session flow.
 - Normal-user denial of `admin.dashboard`.
 - Admin access to `admin.dashboard`.
 - Unauthenticated denial of `admin.users` and `admin.changeUserRole`.
@@ -123,7 +128,7 @@ Validation is run from the real repository using the package scripts:
 | --------------------- | ------------------------------------------------------------------- |
 | Scoped Prettier check | Passed for changed source, tests, and documentation.                |
 | `pnpm check`          | TypeScript validation passed.                                       |
-| `pnpm test`           | Passed: 6 test files, 22 tests.                                     |
+| `pnpm test`           | Passed: 7 test files, 26 tests.                                     |
 | `pnpm build`          | Passed; Vite emitted the existing non-blocking large-chunk warning. |
 | `git diff --check`    | Passed.                                                             |
 

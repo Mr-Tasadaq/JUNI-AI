@@ -122,6 +122,7 @@ describe("authentication and authorization boundaries", () => {
   it("keeps privileged provider credentials and browser bearer forwarding out of client code", () => {
     const clientSource = readClientSource("client/src");
     const transportSource = readFileSync("client/src/main.tsx", "utf8");
+    const sdkSource = readFileSync("server/_core/sdk.ts", "utf8");
 
     expect(clientSource).not.toContain("OPENAI_API_KEY");
     expect(clientSource).not.toContain("BUILT_IN_FORGE_API_KEY");
@@ -129,5 +130,6 @@ describe("authentication and authorization boundaries", () => {
     expect(transportSource).not.toContain(
       'sessionStorage.getItem("manus-cookie")'
     );
+    expect(sdkSource).not.toContain("req.headers.authorization");
   });
 });
