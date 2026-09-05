@@ -46,6 +46,20 @@ An unconfigured adapter is reported as unavailable and cannot be selected. Unsup
 
 The existing untrusted-context envelope remains part of orchestration. Retrieved or uploaded content is passed as data inside `UNTRUSTED_CONTEXT` blocks and cannot become system authority. The VISION prompt explicitly treats uploaded instructions as data and cannot grant permissions, override system policy, or invoke tools. Realtime voice remains a distinct architecture with canonical JUNI/SONA personas, short-lived credentials, and WebRTC transport; it is not routed through normal text orchestration.
 
+### Secure Tool Registry
+
+The minimal secure Tool Registry foundation is **IMPLEMENTED** as a server-only boundary in `server/tools.ts`:
+
+```text
+orchestrator → tool registry → policy/authorization → tool adapter → external service
+```
+
+Every registered tool has a stable name, description, constrained risk level (`read_only`, `external_side_effect`, or `sensitive_action`), strict input schema, authenticated-execution requirement, confirmation policy, and explicit server-only marker. The registry uses closed-world name resolution; unknown names, malformed input, and missing authenticated context fail closed. It does not accept caller-controlled owner or user identity for authorization. The trusted execution context is supplied by server code from the existing authenticated `ctx.user` boundary; no second session or token mechanism exists.
+
+The registry returns a normalized result marked as `untrusted_external_data`. Tool results are data only and cannot grant permissions, change policy, become system instructions, change persona, authorize users, or register tools. The public contract contains no dynamic imports, arbitrary module names, user-selected function names, arbitrary URLs, shell execution, or executable model/user input.
+
+Only deterministic test fixtures are registered: `weather.lookup` and `device.status`. They make no network requests and have no production integrations. Real weather, browser automation, WhatsApp or messaging, desktop automation, scheduling, shell execution, code execution, and model-driven automatic tool execution remain **NOT IMPLEMENTED**. The registry is intentionally not exposed as a browser-facing tRPC endpoint in this foundation slice, and no confirmation UI has been added.
+
 ### VISION multimodal ingestion
 
 `files.analyze` is an authenticated, ephemeral multimodal analysis endpoint. The router validates the upload, resolves `VISION`, and passes a JUNI-owned request to the provider adapter. The adapter translates that request to the OpenAI Responses API: images use `input_image` with a bounded Base64 data URL and `detail: auto`; PDFs and plain text use `input_file` with filename and Base64 data URL, with PDF detail set to `auto`. Only safe filename, MIME type, analysis text, capability, and provider identifiers return to the client. Raw provider responses, headers, API credentials, and request payloads do not.
@@ -142,6 +156,8 @@ The existing database role values are lowercase `user` and `admin`; these are th
 | `system.notifyOwner`          | Existing admin-only procedure.                                                                                                                                                        |
 | `GET /manus-storage/*`        | Authenticated and restricted to `users/{ctx.user.id}/` storage keys.                                                                                                                  |
 
+The Tool Registry is an internal server contract rather than a public procedure. Future orchestration may consume its metadata and policy result, but the current text and Realtime paths do not automatically execute tools.
+
 A client-supplied owner ID cannot override `ctx.user.id`. Cross-user storage paths and conversation IDs return generic not-found results. Conversation and message rows carry server-derived ownership, and all reads/writes query both the resource ID and `ctx.user.id`. Memory, projects, tasks, file metadata, and administrative mutations remain separate future slices.
 
 ## Durable conversation architecture
@@ -230,6 +246,8 @@ The test suite covers:
 - Canonical owner/source joins, stale content-hash rejection, and incompatible stored-vector rejection.
 - Failed reindex preservation, repeated reindex replacement, and cross-user source/deletion rejection.
 - No public semantic-search procedure, raw provider persistence, vector logging, or automatic prompt assembly.
+- Tool Registry registration, closed-world resolution, strict input validation, authenticated execution, risk classification, confirmation policy, and normalized untrusted-result boundaries.
+- Deterministic `weather.lookup` and `device.status` fixtures only; no real external tool integrations or unrestricted execution.
 
 ## Validation evidence
 
@@ -239,7 +257,7 @@ Validation is run from the real repository using the package scripts:
 | ------------------ | ------------------------------------------------------------------- |
 | `pnpm format`      | Passed; unrelated formatter churn was reverted after inspection.    |
 | `pnpm check`       | Passed.                                                             |
-| `pnpm test`        | Passed: 14 test files, 68 tests.                                    |
+| `pnpm test`        | Passed: 15 test files, 78 tests.                                    |
 | `pnpm build`       | Passed; Vite emitted the existing non-blocking large-chunk warning. |
 | `git diff --check` | Passed.                                                             |
 
