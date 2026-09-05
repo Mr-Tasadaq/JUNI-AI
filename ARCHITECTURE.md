@@ -1,58 +1,77 @@
-# JUNI AI Workspace — Living Architecture Record
+# JUNI AI Architecture and Authentication Record
 
 ## Current status
 
-**Status: PARTIAL.** The authenticated workspace foundation is implemented and validated. It includes a responsive conversation UI, user-scoped persistence, a server-only provider boundary, transparent capability messaging, and a metadata model for future object-storage uploads. Realtime voice, web research, multimodal processing, durable memory, and actual upload UX remain intentionally deferred.
+**Status: PARTIAL, AUTHENTICATION HARDENED.** JUNI AI uses the existing Manus OAuth/session foundation. The current repository has protected tRPC procedures for realtime client-secret creation, file analysis, and account preview operations, plus an admin-only owner notification procedure. Durable conversation, message, memory, project, task, and file-metadata resources are not currently implemented in the active schema or router. Their future implementations must use the same server-derived ownership model before they are exposed.
 
-## Implemented architecture
+## Authentication flow
 
-| Boundary                 | Current implementation                                                                                                                                                             | Truthful status                                                                             |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| Authentication           | Scaffold-provided Manus OAuth and authenticated client session hook                                                                                                                | Implemented by scaffold and used by the workspace                                           |
-| Workspace UI             | Responsive React page with desktop sidebar, mobile stacking, accessible buttons, empty/loading/error states, and status disclosures                                                | Implemented and visually checked at 1280px and 375px widths                                 |
-| Conversation persistence | `conversations` and `messages` tables with user IDs, timestamps, role/status fields, and indexes                                                                                   | Implemented; migration applied                                                              |
-| Typed API                | Protected tRPC procedures for listing/creating conversations, reading messages, sending messages, and registering file metadata                                                    | Implemented                                                                                 |
-| AI boundary              | `server/orchestration.ts` converts trusted system guidance, user input, history, and untrusted context into a provider request                                                     | Implemented and unit tested                                                                 |
-| Provider mediation       | Existing server-only `invokeLLM` helper is called from the server orchestration layer                                                                                              | Implemented; browser receives only the resulting assistant message                          |
-| Object storage           | Protected `files.upload` calls server-only `storagePut`, generates a user-scoped key, hashes bytes, and persists `storedFiles` metadata separately from bytes                      | Upload service implemented; upload UI and content-processing pipeline are deferred          |
-| Voice system             | Client-side microphone permission/session card with explicit states for disconnected, connecting, connected, listening, processing, speaking, interrupted, reconnecting, and error | Entry experience implemented; transcription and realtime response transport remain deferred |
-| Capability board         | Three-column board for examples, available capabilities, and limitations, modeled on the supplied reference’s information architecture                                             | Implemented responsively without copying ChatGPT branding                                   |
+The browser starts Manus OAuth through `client/src/const.ts`. The client creates a one-time nonce and writes the `__Host-oauth_state` cookie, then redirects to the Manus OAuth portal with an encoded state containing the callback URI and nonce. `server/_core/oauth.ts` receives the callback, verifies that the state nonce matches the cookie, exchanges the authorization code with the Manus OAuth service, retrieves user information server-side, upserts the user by the provider `openId`, signs a local HS256 session JWT, and sets the session cookie.
 
-## Security decisions
+The session cookie is `httpOnly`, path-scoped to `/`, and transport-aware: production HTTPS uses `secure: true` and `SameSite=None` for the existing cross-site OAuth deployment model; local HTTP uses `secure: false` and `SameSite=Lax` so development does not require an insecure `SameSite=None` cookie. The JWT contains only the provider `openId`, application ID, and display name. `server/_core/sdk.ts` verifies the JWT signature and algorithm, rejects missing or malformed claims, resolves the provider identity to the local `users` row, and returns that database-derived user to the request context.
 
-External context is placed inside explicit `UNTRUSTED_CONTEXT` delimiters and is described to the provider as data only. It cannot change system instructions, permissions, or confirmation policy. Conversation and file procedures are protected and require the authenticated user ID from the server context; conversation lookup always filters by both resource ID and owner ID. Provider credentials are read only from server environment configuration through the existing LLM helper. No provider key is imported into client code, local storage, query parameters, or rendered errors.
+`server/_core/context.ts` calls `sdk.authenticateRequest` for every tRPC request. Authentication failures are intentionally converted to `user: null` so public procedures remain available. `protectedProcedure` then rejects a missing user with the standard `UNAUTHORIZED` tRPC error; `adminProcedure` additionally requires the database-derived `role` to be `admin`. The browser uses `credentials: include` for tRPC requests and no longer mirrors the session token into `sessionStorage` or forwards a browser-held Bearer token.
 
-The current send procedure persists the user message before invoking the model. If the provider fails, JUNI records a user-visible assistant error state and returns a generic failure without exposing provider details. This preserves truthful status and allows a safe retry, but the current operation is not yet wrapped in a transaction or idempotency key.
+The only remaining non-cookie session path is server-side compatibility for scheduled-task sessions and explicitly supplied server/runtime Authorization headers handled by `sdk.authenticateRequest`; the browser client does not create, store, or forward those headers.
+
+## Authorization model
+
+The server is the identity authority. Protected procedures never accept a client-supplied owner ID. The account dashboard, recharge information, and recharge intent derive `userId` directly from `ctx.user.id`. Supplying an extra `userId` field to the recharge input cannot override the authenticated identity; the server response continues to use the context user.
+
+The active protected procedures are:
+
+| Procedure or route            | Boundary             | Ownership behavior                                                                                                               |
+| ----------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `realtime.createClientSecret` | `protectedProcedure` | Uses the authenticated user’s `openId` for the server-side OpenAI safety identifier; the provider API key remains server-only.   |
+| `files.analyze`               | `protectedProcedure` | Requires authentication; accepts ephemeral client file content for analysis and does not persist metadata in the current schema. |
+| `account.dashboard`           | `protectedProcedure` | Derives the returned account identity from `ctx.user.id`.                                                                        |
+| `account.getRechargeInfo`     | `protectedProcedure` | Returns the authenticated `ctx.user.id`, never a client-supplied owner.                                                          |
+| `account.startRecharge`       | `protectedProcedure` | Validates the amount and derives the returned owner from `ctx.user.id`; it does not initiate payment.                            |
+| `system.notifyOwner`          | `adminProcedure`     | Requires a database-derived admin role.                                                                                          |
+| `GET /manus-storage/*`        | Authenticated route  | Requires a valid session and accepts only keys under `users/{ctx.user.id}/`; other users’ keys return a generic 404.             |
+
+Future private conversation, message, file metadata, memory, project, and task tables must include an owner column and indexed owner-scoped queries. Every read, update, delete, and provider-backed action must constrain the resource lookup by both resource identifier and `ctx.user.id`. No current table exists for those domains, so no unrelated schema migration was introduced in this hardening step.
+
+## Security findings and changes
+
+The audit found that the Manus OAuth/session foundation was functional and retained. The following risks were addressed:
+
+| Finding                                                                                  | Severity | Change                                                                                                                                                             |
+| ---------------------------------------------------------------------------------------- | -------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Browser session token was mirrored into `sessionStorage` and forwarded as a Bearer token |     High | Removed the browser fallback from `client/src/main.tsx`; the browser now uses the HttpOnly cookie transport only. Logout no longer manages a browser token mirror. |
+| Runtime user identity was written to `localStorage` by the auth hook                     |   Medium | Removed the write; current user state remains in the tRPC query cache.                                                                                             |
+| Storage proxy had no explicit application authentication or owner boundary               |     High | Added server authentication and enforced the `users/{numericUserId}/` key prefix. Unauthenticated requests receive 401; non-owner paths receive generic 404.       |
+| Local HTTP used `SameSite=None` with `secure: false`                                     |   Medium | Cookie options now use `SameSite=None` only for secure requests and `SameSite=Lax` for local HTTP.                                                                 |
+| OAuth state-cookie cleanup used hard-coded cookie options                                |   Medium | Cleanup now reuses the request-aware cookie option helper.                                                                                                         |
+| Provider error details could be returned through thrown errors                           |   Medium | Provider failures now log only an operation and status and return a generic tRPC service-unavailable message.                                                      |
+| Client-supplied identity override was not explicitly regression-tested                   |   Medium | Added a test proving account output uses the server context ID even when an extra `userId` field is supplied.                                                      |
+
+The audit found no long-lived OpenAI or Forge API key in client code. The short-lived realtime client secret is intentionally returned by the protected server procedure because WebRTC requires it in the browser; the long-lived `OPENAI_API_KEY` and `BUILT_IN_FORGE_API_KEY` remain server environment values. The client-side map configuration is a separate configured frontend credential path and was not expanded by this change.
+
+## Tests added
+
+`server/security.authorization.test.ts` adds regression coverage for unauthenticated rejection of every current protected procedure, server-context ownership overriding an extra client `userId`, cross-user storage-key denial, and a recursive client-source scan that rejects privileged provider credentials and browser session-token forwarding. Existing logout, identity-contract, safe-tool, and orchestration tests remain in place.
 
 ## Validation evidence
 
-The following checks were actually run in the project workspace:
+The following commands were run after the hardening changes:
 
-| Check                          | Result                                                                                                                  |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
-| `pnpm check`                   | Passed with no TypeScript errors                                                                                        |
-| `pnpm test`                    | Passed: 9 test files, 16 tests                                                                                          |
-| `pnpm build`                   | Passed; Vite emitted a non-blocking large-chunk warning from the existing markdown/diagram bundle                       |
-| Database migration generation  | Passed; `drizzle/0001_motionless_whistler.sql` generated                                                                |
-| Database migration application | Passed; four tables and five indexes were created                                                                       |
-| Desktop visual check           | Passed at 1280×720; authenticated workspace rendered with branded hierarchy and status messaging                        |
-| Mobile visual check            | Passed at 375×812; sidebar stacks above workspace, voice entry remains reachable, and capability cards stack vertically |
+| Check                 | Result                                                             |
+| --------------------- | ------------------------------------------------------------------ |
+| Scoped Prettier check | Passed for changed source, tests, and documentation                |
+| `pnpm check`          | Passed with no TypeScript errors                                   |
+| `pnpm test`           | Passed: 5 test files, 15 tests                                     |
+| `pnpm build`          | Passed; Vite emitted the existing non-blocking large-chunk warning |
+| `git diff --check`    | Passed                                                             |
 
-## Known risks and limitations
+No database migration was generated or applied. The current schema contains only the users table in the active TypeScript source, so there is no existing durable private-resource model to migrate during this step.
 
-The current conversation send flow is sequential rather than transactional. A future retry/idempotency design should prevent duplicate user messages if a client retries after a network timeout. The schema currently stores ownership IDs and indexes without foreign-key constraints because the scaffold’s baseline schema does not yet define relational constraints; this should be revisited with a controlled migration. Provider model selection is delegated to the existing gateway default and should later gain capability-aware routing and explicit availability reporting.
+## Remaining limitations
 
-The workspace currently supports text conversations only. The protected upload service exists, but there is no upload surface, content scanning pipeline, document extraction, media processing, or retrieval index. The provider boundary has a security envelope for retrieved context, but no live web research connector is enabled in this milestone.
+The local JWT is stateless and has the existing one-year lifetime; logout clears the cookie but cannot revoke a copied token before expiration. A future production hardening milestone should add rotation and server-side revocation or shorten the session lifetime after the deployment threat model is confirmed.
 
-## Next incremental milestones
+The storage key prefix is now an enforced boundary for the existing proxy, but the repository does not yet contain a stored-file metadata table or an upload procedure that constructs `users/{userId}/...` keys. A future upload feature must create the owner-scoped key server-side and persist metadata only after a successful storage write.
 
-1. Add explicit conversation deletion/rename and idempotent send semantics with authorization tests.
-2. Add a server upload procedure that uses `storagePut`, hashes content, validates MIME and size, and persists `storedFiles` metadata only after successful storage.
-3. Add document extraction and provenance records before exposing uploaded content to the AI boundary.
-4. Add capability-aware model discovery, provider health status, and structured provider failure telemetry.
-5. Add research tools behind a named, permissioned tool registry with source citations and prompt-injection defenses.
-6. Connect the voice card to the approved transcription bridge and realtime transport/session subsystem without coupling it to text chat.
+Conversations, messages, memories, projects, and tasks are not currently implemented in the active server router or schema. They must not be treated as private-resource features until their tables, owner indexes, server-side authorization checks, deletion semantics, and cross-user tests exist. The current file-analysis procedure is ephemeral and protected but does not persist file metadata.
 
-## Neural-inspired schema research milestone
-
-A design proposal is recorded in `NEURAL_SCHEMA_PROPOSAL.md`, grounded in the supplied *Neural Networks and Deep Learning* material and cross-checked against research on continual learning and memory-augmented neural networks. The proposal separates observations, working context, episodic experience, semantic knowledge, user-approved memory, retrieval traces, learning candidates, and evaluation evidence. It explicitly avoids treating product memory as model retraining or implying consciousness. This milestone is documentation-only; the first implementation slice should be `observations`, `experiences`, and `retrievalTraces` after retention, privacy, and deletion requirements are confirmed.
+The existing Manus OAuth callback depends on the configured OAuth service and database environment. Local development can run without those services, but authenticated integration tests require the real environment or a dedicated test double. Provider availability, database connectivity, and scheduled-task behavior remain deployment concerns outside this unit-level hardening step.

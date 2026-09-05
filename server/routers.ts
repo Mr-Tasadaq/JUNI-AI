@@ -14,6 +14,7 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { ENV } from "./_core/env";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import { TRPCError } from "@trpc/server";
 
 const amountSchema = z.number().finite().min(100).max(100_000);
 export const personaSchema = z.enum(["juni", "sona"] satisfies [
@@ -38,12 +39,12 @@ function safetyIdentifier(openId: string) {
   return createHash("sha256").update(openId).digest("hex");
 }
 
-function getOpenAiError(body: unknown) {
-  if (typeof body === "object" && body && "error" in body) {
-    const error = (body as { error?: { message?: string } }).error;
-    return error?.message ?? "OpenAI request failed";
-  }
-  return "OpenAI request failed";
+function throwProviderFailure(operation: string, status?: number): never {
+  console.error("[Provider] Request failed", { operation, status });
+  throw new TRPCError({
+    code: "INTERNAL_SERVER_ERROR",
+    message: "The requested AI service is temporarily unavailable.",
+  });
 }
 
 export const appRouter = router({
@@ -61,9 +62,7 @@ export const appRouter = router({
       .input(z.object({ persona: personaSchema, language: languageSchema }))
       .mutation(async ({ input, ctx }) => {
         if (!ENV.openAiApiKey) {
-          throw new Error(
-            "OpenAI Realtime is not configured. Add OPENAI_API_KEY on the server."
-          );
+          throwProviderFailure("realtime configuration");
         }
         const persona = JUNI_PERSONAS[input.persona];
         const language =
@@ -93,7 +92,8 @@ export const appRouter = router({
           }
         );
         const body = await response.json().catch(() => null);
-        if (!response.ok || !body?.value) throw new Error(getOpenAiError(body));
+        if (!response.ok || !body?.value)
+          throwProviderFailure("realtime client secret", response.status);
         console.info("[Realtime] OpenAI client secret issued", {
           userId: ctx.user.id,
           model: REALTIME_MODEL,
@@ -116,9 +116,7 @@ export const appRouter = router({
       )
       .mutation(async ({ input, ctx }) => {
         if (!ENV.openAiApiKey)
-          throw new Error(
-            "OpenAI file analysis is not configured. Add OPENAI_API_KEY on the server."
-          );
+          throwProviderFailure("file analysis configuration");
         const isImage = input.mimeType.startsWith("image/");
         const isSupportedFile =
           isImage ||
@@ -160,7 +158,8 @@ export const appRouter = router({
           }),
         });
         const body = await response.json().catch(() => null);
-        if (!response.ok) throw new Error(getOpenAiError(body));
+        if (!response.ok)
+          throwProviderFailure("file analysis", response.status);
         return {
           name: input.name,
           mimeType: input.mimeType,
