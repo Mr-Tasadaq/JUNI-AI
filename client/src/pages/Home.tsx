@@ -56,9 +56,9 @@ type HistoryItem = {
   createdAt: number;
 };
 
-function readHistory(): HistoryItem[] {
+function readHistory(storageKey: string): HistoryItem[] {
   try {
-    const raw = localStorage.getItem("juni-history");
+    const raw = localStorage.getItem(storageKey);
     return raw ? (JSON.parse(raw) as HistoryItem[]).slice(0, 30) : [];
   } catch {
     return [];
@@ -74,6 +74,14 @@ export default function Home() {
     enabled: isAuthenticated,
     retry: false,
   });
+  const conversationsQuery = trpc.conversations.list.useQuery(undefined, {
+    enabled: isAuthenticated,
+    retry: false,
+  });
+  const createConversationMutation = trpc.conversations.create.useMutation();
+  const addConversationMessageMutation =
+    trpc.conversations.addMessage.useMutation();
+  const conversationUtils = trpc.useUtils();
   const [assistantId, setAssistantId] = useState<PersonaId>("juni");
   const [language, setLanguage] = useState<LanguageId>("en");
   const [status, setStatus] = useState<SessionStatus>("idle");
@@ -82,7 +90,7 @@ export default function Home() {
   const [showAccount, setShowAccount] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
-  const [history, setHistory] = useState<HistoryItem[]>(readHistory);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
   const [transcript, setTranscript] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [recording, setRecording] = useState(false);
@@ -95,6 +103,8 @@ export default function Home() {
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recordingChunksRef = useRef<Blob[]>([]);
   const statusRef = useRef<SessionStatus>("idle");
+  const conversationIdRef = useRef<string | null>(null);
+  const userTranscriptRef = useRef("");
 
   const persona = JUNI_PERSONAS[assistantId];
   const languageLabel =
@@ -121,9 +131,59 @@ export default function Home() {
     setHistory(current => [item, ...current].slice(0, 30));
   }, []);
 
+  const localHistoryKey = user?.id ? `juni-history-${user.id}` : null;
+
   useEffect(() => {
-    localStorage.setItem("juni-history", JSON.stringify(history));
-  }, [history]);
+    setHistory(localHistoryKey ? readHistory(localHistoryKey) : []);
+  }, [localHistoryKey]);
+
+  useEffect(() => {
+    if (localHistoryKey)
+      localStorage.setItem(localHistoryKey, JSON.stringify(history));
+  }, [history, localHistoryKey]);
+
+  const persistVoiceTurn = useCallback(
+    async (assistantText: string) => {
+      try {
+        if (!conversationIdRef.current) {
+          const created = await createConversationMutation.mutateAsync({
+            title: `${persona.name} session`,
+          });
+          conversationIdRef.current = created.id;
+        }
+        const conversationId = conversationIdRef.current;
+        if (!conversationId) return;
+        const userText = userTranscriptRef.current.trim();
+        userTranscriptRef.current = "";
+        if (userText) {
+          await addConversationMessageMutation.mutateAsync({
+            conversationId,
+            role: "user",
+            content: userText,
+          });
+        }
+        await addConversationMessageMutation.mutateAsync({
+          conversationId,
+          role: "assistant",
+          content: assistantText,
+        });
+        void conversationUtils.conversations.list.invalidate();
+      } catch {
+        addActivity(
+          "History unavailable",
+          "This turn remains local until durable storage is available.",
+          "amber"
+        );
+      }
+    },
+    [
+      addActivity,
+      addConversationMessageMutation,
+      conversationUtils,
+      createConversationMutation,
+      persona.name,
+    ]
+  );
 
   const sendEvent = useCallback((event: Record<string, unknown>) => {
     if (dataChannelRef.current?.readyState === "open")
@@ -164,10 +224,13 @@ export default function Home() {
         setStatus("speaking");
         statusRef.current = "speaking";
       }
+      if (event.type === "conversation.item.input_audio_transcription.delta") {
+        userTranscriptRef.current += event.delta ?? "";
+        setTranscript((current: string) => current + (event.delta ?? ""));
+      }
       if (
         event.type === "response.output_audio_transcript.delta" ||
-        event.type === "response.output_text.delta" ||
-        event.type === "conversation.item.input_audio_transcription.delta"
+        event.type === "response.output_text.delta"
       ) {
         setTranscript((current: string) => current + (event.delta ?? ""));
       }
@@ -179,7 +242,10 @@ export default function Home() {
           .map((part: any) => part.transcript ?? part.text ?? "")
           .join(" ")
           .trim();
-        if (text) addHistory("voice", text);
+        if (text) {
+          addHistory("voice", text);
+          void persistVoiceTurn(text);
+        }
       }
       if (event.type === "error") {
         setErrorMessage(
@@ -233,7 +299,7 @@ export default function Home() {
         }
       }
     },
-    [addActivity, addHistory, assistantId, sendToolResult]
+    [addActivity, addHistory, assistantId, persistVoiceTurn, sendToolResult]
   );
 
   const closeSession = useCallback(() => {
@@ -888,22 +954,56 @@ export default function Home() {
               </button>
             </div>
             <p className="mt-1 text-xs text-white/35">
-              Stored locally in this browser.
+              Server-backed conversations are canonical after authentication;
+              local notes remain a temporary compatibility layer.
             </p>
             <div className="mt-5 space-y-3">
-              {history.length === 0 ? (
-                <p className="text-sm text-white/35">No session notes yet.</p>
-              ) : (
-                history.map(item => (
-                  <div key={item.id} className="rounded-xl bg-white/[0.04] p-3">
-                    <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-white/30">
-                      <History className="size-3" /> {item.type}
-                    </div>
-                    <p className="mt-1 text-xs leading-5 text-white/65">
-                      {item.text}
-                    </p>
+              {conversationsQuery.isError && (
+                <p className="text-sm text-amber-100/70">
+                  Durable conversations are temporarily unavailable. Local notes
+                  remain on this signed-in account only.
+                </p>
+              )}
+              {conversationsQuery.data?.map(item => (
+                <div
+                  key={item.id}
+                  className="rounded-xl bg-emerald-300/[0.06] p-3"
+                >
+                  <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-emerald-200/60">
+                    <History className="size-3" /> durable conversation
                   </div>
-                ))
+                  <p className="mt-1 text-xs leading-5 text-white/75">
+                    {item.title}
+                  </p>
+                  <p className="mt-1 text-[10px] text-white/30">
+                    Updated {new Date(item.updatedAt).toLocaleString()}
+                  </p>
+                </div>
+              ))}
+              {history.length > 0 && (
+                <>
+                  <p className="pt-2 text-[10px] uppercase tracking-wider text-white/30">
+                    Temporary local notes
+                  </p>
+                  {history.map(item => (
+                    <div
+                      key={item.id}
+                      className="rounded-xl bg-white/[0.04] p-3"
+                    >
+                      <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-white/30">
+                        <History className="size-3" /> {item.type}
+                      </div>
+                      <p className="mt-1 text-xs leading-5 text-white/65">
+                        {item.text}
+                      </p>
+                    </div>
+                  ))}
+                </>
+              )}
+              {!conversationsQuery.data?.length && history.length === 0 && (
+                <p className="text-sm text-white/35">
+                  No conversation history yet.
+                </p>
               )}
             </div>
           </aside>

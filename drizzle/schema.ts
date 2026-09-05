@@ -54,7 +54,50 @@ export const auditEvents = mysqlTable(
   })
 );
 
+export const conversations = mysqlTable(
+  "conversations",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    ownerId: int("ownerId").notNull(),
+    title: varchar("title", { length: 160 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  table => ({
+    ownerUpdatedIdx: index("conversations_owner_updated_idx").on(
+      table.ownerId,
+      table.updatedAt
+    ),
+  })
+);
+
+export const messages = mysqlTable(
+  "messages",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    conversationId: varchar("conversationId", { length: 36 }).notNull(),
+    ownerId: int("ownerId").notNull(),
+    role: mysqlEnum("role", ["user", "assistant"]).notNull(),
+    content: text("content").notNull(),
+    metadata: json("metadata"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => ({
+    conversationCreatedIdx: index("messages_conversation_created_idx").on(
+      table.conversationId,
+      table.createdAt
+    ),
+    ownerConversationIdx: index("messages_owner_conversation_idx").on(
+      table.ownerId,
+      table.conversationId,
+      table.createdAt
+    ),
+  })
+);
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type AuditEvent = typeof auditEvents.$inferSelect;
 export type InsertAuditEvent = typeof auditEvents.$inferInsert;
+export type Conversation = typeof conversations.$inferSelect;
+export type Message = typeof messages.$inferSelect;

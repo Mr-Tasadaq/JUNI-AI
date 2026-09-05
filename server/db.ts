@@ -1,6 +1,13 @@
-import { desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { auditEvents, InsertUser, User, users } from "../drizzle/schema";
+import {
+  auditEvents,
+  conversations,
+  InsertUser,
+  messages,
+  User,
+  users,
+} from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { randomUUID } from "node:crypto";
 
@@ -207,3 +214,212 @@ export async function listAuditEventsForAdmin(
 }
 
 // Audit events are intentionally append-only: no update/delete procedures are exposed.
+
+export type ConversationSummary = {
+  id: string;
+  title: string;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type ConversationMessage = {
+  id: string;
+  conversationId: string;
+  role: "user" | "assistant";
+  content: string;
+  metadata: {
+    persona?: "juni" | "sona";
+    capability?: string;
+    provider?: string;
+  } | null;
+  createdAt: Date;
+};
+
+export type OwnedConversation = ConversationSummary & {
+  messages: ConversationMessage[];
+};
+
+const conversationColumns = {
+  id: conversations.id,
+  title: conversations.title,
+  createdAt: conversations.createdAt,
+  updatedAt: conversations.updatedAt,
+};
+
+const messageColumns = {
+  id: messages.id,
+  conversationId: messages.conversationId,
+  role: messages.role,
+  content: messages.content,
+  metadata: messages.metadata,
+  createdAt: messages.createdAt,
+};
+
+function parseConversationMetadata(
+  value: unknown
+): ConversationMessage["metadata"] {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const metadata: NonNullable<ConversationMessage["metadata"]> = {};
+  if (record.persona === "juni" || record.persona === "sona")
+    metadata.persona = record.persona;
+  if (typeof record.capability === "string" && record.capability.length <= 80)
+    metadata.capability = record.capability;
+  if (typeof record.provider === "string" && record.provider.length <= 80)
+    metadata.provider = record.provider;
+  return Object.keys(metadata).length ? metadata : null;
+}
+
+export async function listConversationsForOwner(
+  ownerId: number
+): Promise<ConversationSummary[]> {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+
+  return db
+    .select(conversationColumns)
+    .from(conversations)
+    .where(eq(conversations.ownerId, ownerId))
+    .orderBy(desc(conversations.updatedAt), desc(conversations.id));
+}
+
+export async function getConversationForOwner(
+  ownerId: number,
+  conversationId: string
+): Promise<OwnedConversation | undefined> {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+
+  const conversation = await db
+    .select(conversationColumns)
+    .from(conversations)
+    .where(
+      and(
+        eq(conversations.id, conversationId),
+        eq(conversations.ownerId, ownerId)
+      )
+    )
+    .limit(1);
+  if (!conversation[0]) return undefined;
+
+  const ownedMessages = await db
+    .select(messageColumns)
+    .from(messages)
+    .where(
+      and(
+        eq(messages.conversationId, conversationId),
+        eq(messages.ownerId, ownerId)
+      )
+    )
+    .orderBy(asc(messages.createdAt), asc(messages.id));
+
+  return {
+    ...conversation[0],
+    messages: ownedMessages.map(message => ({
+      ...message,
+      metadata: parseConversationMetadata(message.metadata),
+    })),
+  };
+}
+
+export async function createConversationForOwner(
+  ownerId: number,
+  title: string
+): Promise<ConversationSummary> {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  const id = randomUUID();
+  const now = new Date();
+  await db.insert(conversations).values({
+    id,
+    ownerId,
+    title,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return { id, title, createdAt: now, updatedAt: now };
+}
+
+export async function addMessageForOwner(
+  ownerId: number,
+  conversationId: string,
+  role: "user" | "assistant",
+  content: string,
+  metadata?: ConversationMessage["metadata"]
+): Promise<ConversationMessage | undefined> {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+
+  return db.transaction(async tx => {
+    const owned = await tx
+      .select({ id: conversations.id })
+      .from(conversations)
+      .where(
+        and(
+          eq(conversations.id, conversationId),
+          eq(conversations.ownerId, ownerId)
+        )
+      )
+      .limit(1);
+    if (!owned[0]) return undefined;
+
+    const id = randomUUID();
+    const createdAt = new Date();
+    await tx.insert(messages).values({
+      id,
+      conversationId,
+      ownerId,
+      role,
+      content,
+      metadata: metadata ?? null,
+      createdAt,
+    });
+    await tx
+      .update(conversations)
+      .set({ updatedAt: createdAt })
+      .where(
+        and(
+          eq(conversations.id, conversationId),
+          eq(conversations.ownerId, ownerId)
+        )
+      );
+
+    return {
+      id,
+      conversationId,
+      role,
+      content,
+      metadata: metadata ?? null,
+      createdAt,
+    };
+  });
+}
+
+export async function renameConversationForOwner(
+  ownerId: number,
+  conversationId: string,
+  title: string
+): Promise<ConversationSummary | undefined> {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  await db
+    .update(conversations)
+    .set({ title })
+    .where(
+      and(
+        eq(conversations.id, conversationId),
+        eq(conversations.ownerId, ownerId)
+      )
+    );
+  const updated = await db
+    .select(conversationColumns)
+    .from(conversations)
+    .where(
+      and(
+        eq(conversations.id, conversationId),
+        eq(conversations.ownerId, ownerId)
+      )
+    )
+    .limit(1);
+  return updated[0];
+}

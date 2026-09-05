@@ -41,6 +41,10 @@ const dataUrlSchema = z
     "File must be a base64 data URL"
   );
 const adminRoleSchema = z.enum(["user", "admin"]);
+const conversationIdSchema = z.string().uuid();
+const conversationTitleSchema = z.string().trim().min(1).max(160);
+const messageContentSchema = z.string().trim().min(1).max(20_000);
+const messageRoleSchema = z.enum(["user", "assistant"]);
 
 function safetyIdentifier(openId: string) {
   return createHash("sha256").update(openId).digest("hex");
@@ -216,6 +220,129 @@ export const appRouter = router({
           message:
             "Recharge intent recorded in the safe preview layer. A verified payment provider must be connected before checkout can begin.",
         };
+      }),
+  }),
+  conversations: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      try {
+        return await db.listConversationsForOwner(ctx.user.id);
+      } catch (error) {
+        console.error("[Conversation] List failed", { userId: ctx.user.id });
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Conversation history is temporarily unavailable.",
+        });
+      }
+    }),
+    get: protectedProcedure
+      .input(z.object({ conversationId: conversationIdSchema }))
+      .query(async ({ input, ctx }) => {
+        try {
+          const conversation = await db.getConversationForOwner(
+            ctx.user.id,
+            input.conversationId
+          );
+          if (!conversation) {
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Conversation not found.",
+            });
+          }
+          return conversation;
+        } catch (error) {
+          if (error instanceof TRPCError) throw error;
+          console.error("[Conversation] Read failed", {
+            userId: ctx.user.id,
+          });
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Conversation history is temporarily unavailable.",
+          });
+        }
+      }),
+    create: protectedProcedure
+      .input(z.object({ title: conversationTitleSchema.optional() }).optional())
+      .mutation(async ({ input, ctx }) => {
+        try {
+          return await db.createConversationForOwner(
+            ctx.user.id,
+            input?.title ?? "New conversation"
+          );
+        } catch (error) {
+          console.error("[Conversation] Create failed", {
+            userId: ctx.user.id,
+          });
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Conversation could not be created.",
+          });
+        }
+      }),
+    addMessage: protectedProcedure
+      .input(
+        z.object({
+          conversationId: conversationIdSchema,
+          role: messageRoleSchema,
+          content: messageContentSchema,
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        try {
+          const message = await db.addMessageForOwner(
+            ctx.user.id,
+            input.conversationId,
+            input.role,
+            input.content
+          );
+          if (!message) {
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Conversation not found.",
+            });
+          }
+          return message;
+        } catch (error) {
+          if (error instanceof TRPCError) throw error;
+          console.error("[Conversation] Message append failed", {
+            userId: ctx.user.id,
+          });
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Message could not be saved.",
+          });
+        }
+      }),
+    rename: protectedProcedure
+      .input(
+        z.object({
+          conversationId: conversationIdSchema,
+          title: conversationTitleSchema,
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        try {
+          const conversation = await db.renameConversationForOwner(
+            ctx.user.id,
+            input.conversationId,
+            input.title
+          );
+          if (!conversation) {
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Conversation not found.",
+            });
+          }
+          return conversation;
+        } catch (error) {
+          if (error instanceof TRPCError) throw error;
+          console.error("[Conversation] Rename failed", {
+            userId: ctx.user.id,
+          });
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Conversation could not be renamed.",
+          });
+        }
       }),
   }),
   admin: router({

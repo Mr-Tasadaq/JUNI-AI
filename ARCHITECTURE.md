@@ -68,7 +68,7 @@ The user experience is the authenticated `/` route implemented by `client/src/pa
 - Local browser session notes, recording export, protected file analysis, and confirmation-gated tools.
 - Account and safe-preview billing information through protected server procedures.
 
-An unauthenticated request receives an authentication gate instead of the private voice panel. The UI may show a sign-in control, but server procedures remain the actual security boundary. The local conversation history is explicitly browser-local and is not represented as durable private server data.
+An unauthenticated request receives an authentication gate instead of the private voice panel. The UI may show a sign-in control, but server procedures remain the actual security boundary. Authenticated voice turns with available textual transcripts are persisted to the owner-scoped server conversation; raw audio remains ephemeral. Account-namespaced local notes remain a temporary compatibility layer and are never auto-uploaded.
 
 Persona switching is deterministic: selecting a persona closes any active session, updates the shared persona ID, updates the UI identity/greeting, and causes the next protected `realtime.createClientSecret` request to load that persona’s server-side system instructions and configured voice. The browser receives only the temporary client secret and selected voice needed for WebRTC negotiation.
 
@@ -104,10 +104,30 @@ The existing database role values are lowercase `user` and `admin`; these are th
 | `admin.users`                 | Admin only; returns a deliberately reduced user summary without `openId`, login method, credentials, or provider secrets.                                                             |
 | `admin.changeUserRole`        | Admin only; validates target ID and role, prevents self-demotion, and atomically updates `users.role` with an append-only `user.role_changed` audit event derived from `ctx.user.id`. |
 | `admin.auditEvents`           | Admin only; returns a newest-first reduced DTO with event ID, actor, action, target, timestamp, and allowlisted role metadata.                                                        |
+| `conversations.list`          | Authenticated owner only; returns reduced conversation summaries ordered by newest activity.                                                                                          |
+| `conversations.get`           | Authenticated owner only; returns one owned conversation and its messages; cross-user IDs return `NOT_FOUND`.                                                                         |
+| `conversations.create`        | Authenticated owner only; creates a server-owned conversation and ignores any client owner field.                                                                                     |
+| `conversations.addMessage`    | Authenticated owner only; validates UUID, role, and 20,000-character maximum content, then atomically appends and updates activity.                                                   |
+| `conversations.rename`        | Authenticated owner only; accepts only a validated conversation ID and title.                                                                                                         |
 | `system.notifyOwner`          | Existing admin-only procedure.                                                                                                                                                        |
 | `GET /manus-storage/*`        | Authenticated and restricted to `users/{ctx.user.id}/` storage keys.                                                                                                                  |
 
-A client-supplied owner ID cannot override `ctx.user.id`. Cross-user storage paths return a generic 404. Future conversations, messages, memory, projects, tasks, file metadata, and administrative mutations must add owner-scoped queries, input schemas, authorization checks, and cross-user tests before being exposed.
+A client-supplied owner ID cannot override `ctx.user.id`. Cross-user storage paths and conversation IDs return generic not-found results. Conversation and message rows carry server-derived ownership, and all reads/writes query both the resource ID and `ctx.user.id`. Memory, projects, tasks, file metadata, and administrative mutations remain separate future slices.
+
+## Durable conversation architecture
+
+The active schema now contains two owner-scoped tables in addition to `users` and `auditEvents`:
+
+| Table           | Purpose                                                                                                                          | Ownership and indexing                                                                                                                                          |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `conversations` | Stable UUID, owner, title, creation time, and last activity time.                                                                | `ownerId`; `(ownerId, updatedAt)` supports the authenticated history list.                                                                                      |
+| `messages`      | Stable UUID, conversation ID, owner, `user`/`assistant` role, textual content, optional allowlisted metadata, and creation time. | `ownerId` plus conversation ID; `(conversationId, createdAt)` supports ordered reads and `(ownerId, conversationId, createdAt)` reinforces owner-scoped access. |
+
+The server is authoritative. `conversations.create` derives ownership from `ctx.user.id`; `get`, `addMessage`, and `rename` require both the requested resource ID and that same server-derived owner. Message content is bounded to 20,000 characters. The public procedure does not accept owner IDs, timestamps, provider IDs, capability values, or arbitrary metadata. The database service accepts metadata only from trusted server code and reduces returned metadata to persona, capability, and provider allowlists.
+
+For the current voice-first path, the transition is: authenticated user starts a Realtime session; available input transcript and assistant transcript are collected; the server-backed conversation is created lazily; the user message is written before the assistant message; and the UI refreshes the owner-scoped conversation list after successful writes. If persistence is unavailable, the turn remains a local compatibility note and the UI reports that durable history is unavailable. This does not claim full memory, learning, or provider-response archival.
+
+Raw WebRTC audio, recordings, client secrets, hidden system prompts, raw provider responses, authorization headers, and API credentials are not stored in the conversation tables. Persona identity remains part of the authenticated UI/session contract; message metadata is currently null for Realtime turns because the browser is not trusted to manufacture provider or capability provenance.
 
 ## Security decisions and findings
 
@@ -144,6 +164,13 @@ The test suite covers:
 - Durable `user.role_changed` audit creation with server-derived actor identity.
 - Admin-only newest-first audit reading with reduced metadata.
 - Self-role-change prevention for administrators.
+- Authenticated conversation creation and owner-derived list access.
+- Unauthenticated conversation creation rejection.
+- Cross-user conversation read and message-write rejection.
+- Owner-derived rename and message-write binding.
+- Invalid conversation IDs and excessive message content rejection.
+- Rejection of browser-supplied owner identity and client metadata.
+- Deterministic conversation ordering through server query ordering.
 - Client identity cannot override server identity.
 - Cross-user and unauthenticated storage-key denial.
 - Generic provider errors without configuration leakage.
@@ -162,16 +189,16 @@ Validation is run from the real repository using the package scripts:
 | ------------------ | ------------------------------------------------------------------- |
 | `pnpm format`      | Passed; unrelated formatter churn was reverted after inspection.    |
 | `pnpm check`       | Passed.                                                             |
-| `pnpm test`            | Passed: 9 test files, 34 tests.                                     |
-| `pnpm build`           | Passed; Vite emitted the existing non-blocking large-chunk warning. |
+| `pnpm test`        | Passed: 10 test files, 40 tests.                                    |
+| `pnpm build`       | Passed; Vite emitted the existing non-blocking large-chunk warning. |
 | `git diff --check` | Passed.                                                             |
 
-The durable audit schema is defined in `drizzle/schema.ts` and migration `drizzle/0002_durable_audit_events.sql`. Migration generation detected historical `conversations`, `messages`, and `storedFiles` artifacts that are absent from the active schema, so the generated destructive drops were rejected; the committed migration creates only `auditEvents`. The migration must be applied through the normal `pnpm db:push` workflow in an environment with the real `DATABASE_URL`; no database connection was available in this validation environment.
+The durable audit schema is defined in `drizzle/schema.ts` and migration `drizzle/0002_durable_audit_events.sql`. Durable conversations and messages are defined in the same schema and migration `drizzle/0003_durable_conversations.sql`. Historical `conversations`, `messages`, and `storedFiles` SQL artifacts were inspected as remnants of an earlier schema; the committed conversation migration creates only the intended new tables and indexes, with no drops or resets. Migrations must be applied through the normal database workflow in an environment with the real `DATABASE_URL`; no live database migration was run in this validation environment.
 
 ## Known limitations and next slices
 
 The current JWT remains stateless with the existing one-year lifetime; logout cannot revoke a copied token before expiration. A future production hardening slice should add token rotation and revocation or shorten the lifetime after the deployment threat model is confirmed.
 
-The admin panel is intentionally an operational foundation rather than a claim of full administrative CRUD. Account status controls, provider configuration mutations, model availability controls, voice configuration persistence, memory/knowledge management, storage quotas, research/tool policies, feature flags, maintenance actions, diagnostics, and persistent audit events require real domain contracts and should be implemented one auditable server procedure at a time.
+The admin panel is intentionally an operational foundation rather than a claim of full administrative CRUD. Account status controls, provider configuration mutations, model availability controls, voice configuration persistence, memory/knowledge management, storage quotas, research/tool policies, feature flags, maintenance actions, diagnostics, and administrative access to private conversations remain unavailable.
 
-The user panel still uses local browser history and the file-analysis path remains ephemeral. Durable conversation, message, memory, project, task, and file metadata ownership will require controlled schema migrations and owner-scoped service methods before those features are enabled.
+The file-analysis path remains ephemeral. Durable conversation continuity is the first persistence slice, not a complete memory or learning system. Existing pre-migration global `juni-history` data is intentionally not auto-imported; new temporary notes are namespaced by authenticated user ID to prevent cross-account leakage. A future explicit user-consented import can be designed separately.
