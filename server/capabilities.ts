@@ -1,5 +1,11 @@
 import { ENV } from "./_core/env";
-import { invokeLLM, type InvokeParams, type InvokeResult } from "./_core/llm";
+import {
+  invokeLLM,
+  invokeVision,
+  type InvokeParams,
+  type InvokeResult,
+  type VisionInvokeParams,
+} from "./_core/llm";
 
 export const CAPABILITIES = [
   "FAST_GENERAL",
@@ -13,7 +19,7 @@ export const CAPABILITIES = [
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
-export type ImplementedCapability = "SMART_GENERAL";
+export type ImplementedCapability = "SMART_GENERAL" | "VISION";
 
 export type ProviderHealthState =
   | "healthy"
@@ -59,6 +65,7 @@ export type ProviderAdapter = {
   capabilities: readonly ImplementedCapability[];
   getHealth(): ProviderHealth;
   invoke(params: InvokeParams): Promise<InvokeResult>;
+  invokeVision?(params: VisionInvokeParams): Promise<string>;
 };
 
 export type CapabilityResolution = {
@@ -144,8 +151,63 @@ export function createForgeLLMAdapter(
   };
 }
 
+export function createVisionAdapter(
+  analyze: (params: VisionInvokeParams) => Promise<string> = invokeVision,
+  configured: boolean = Boolean(ENV.openAiApiKey)
+): ProviderAdapter {
+  let lastErrorCategory: ProviderErrorCategory | undefined;
+  const providerId = "openai-responses-vision";
+
+  return {
+    id: providerId,
+    capabilities: ["VISION"],
+    getHealth: () => ({
+      providerId,
+      enabled: configured,
+      capabilities: ["VISION"],
+      state: configured
+        ? lastErrorCategory
+          ? "unhealthy"
+          : "healthy"
+        : "unconfigured",
+      ...(lastErrorCategory ? { lastErrorCategory } : {}),
+    }),
+    async invoke() {
+      throw new JuniProviderError(
+        "unsupported_capability",
+        "This provider adapter only supports VISION requests.",
+        { providerId }
+      );
+    },
+    async invokeVision(params) {
+      if (!configured) {
+        const error = new JuniProviderError(
+          "configuration",
+          "The requested AI service is temporarily unavailable.",
+          { providerId }
+        );
+        lastErrorCategory = error.category;
+        throw error;
+      }
+
+      try {
+        const result = await analyze(params);
+        lastErrorCategory = undefined;
+        return result;
+      } catch (error) {
+        const normalized = normalizeProviderError(error, providerId);
+        lastErrorCategory = normalized.category;
+        throw normalized;
+      }
+    },
+  };
+}
+
 export function createCapabilityRegistry(
-  adapters: readonly ProviderAdapter[] = [createForgeLLMAdapter()]
+  adapters: readonly ProviderAdapter[] = [
+    createForgeLLMAdapter(),
+    createVisionAdapter(),
+  ]
 ): CapabilityRegistry {
   return { adapters };
 }
@@ -231,6 +293,7 @@ export const capabilityHealth = getCapabilityStatus;
 
 export const IMPLEMENTED_CAPABILITIES: readonly ImplementedCapability[] = [
   "SMART_GENERAL",
+  "VISION",
 ];
 
 export const SEPARATE_REALTIME_CAPABILITY: Capability = "VOICE_REALTIME";
@@ -238,7 +301,7 @@ export const SEPARATE_REALTIME_CAPABILITY: Capability = "VOICE_REALTIME";
 export const capabilityContracts = {
   FAST_GENERAL: "unsupported",
   SMART_GENERAL: "implemented",
-  VISION: "unsupported",
+  VISION: "implemented",
   VOICE_REALTIME: "separate-realtime-path",
   VIDEO: "unsupported",
   EMBEDDING: "unsupported",

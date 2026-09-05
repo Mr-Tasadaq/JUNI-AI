@@ -27,24 +27,30 @@ The normal text orchestration path is provider-neutral at the JUNI boundary:
 Application / orchestrator → JUNI capability contract → provider adapter → external provider
 ```
 
-`server/capabilities.ts` owns the capability vocabulary, adapter contract, deterministic resolution, safe provider-health metadata, and normalized provider errors. `server/orchestration.ts` requests a capability and uses the selected adapter; it does not call a vendor transport directly. The current adapter wraps the existing server-only `invokeLLM` implementation rather than duplicating its request normalization, retries, tools, structured output, or model behavior.
+`server/capabilities.ts` owns the capability vocabulary, adapter contract, deterministic resolution, safe provider-health metadata, and normalized provider errors. `server/orchestration.ts` requests a capability and uses the selected adapter; it does not call a vendor transport directly. `SMART_GENERAL` wraps the existing server-only `invokeLLM` implementation. `VISION` uses the server-only `invokeVision` transport in `server/_core/llm.ts`, keeping Responses API request construction outside routers and reusing the existing retry/error boundary.
 
 The capability registry is intentionally truthful:
 
-| Capability       | Status                                                      | Current boundary                                  |
-| ---------------- | ----------------------------------------------------------- | ------------------------------------------------- |
-| `SMART_GENERAL`  | **COMPLETE** when the server Forge configuration is present | Existing server-side LLM adapter                  |
-| `FAST_GENERAL`   | **NOT IMPLEMENTED**                                         | No adapter                                        |
-| `VISION`         | **NOT IMPLEMENTED**                                         | No dedicated capability adapter                   |
-| `VIDEO`          | **NOT IMPLEMENTED**                                         | No video provider pipeline                        |
-| `EMBEDDING`      | **NOT IMPLEMENTED**                                         | No embedding provider                             |
-| `RESEARCH`       | **NOT IMPLEMENTED**                                         | No research tool layer                            |
-| `CODE`           | **NOT IMPLEMENTED**                                         | No code capability adapter                        |
-| `VOICE_REALTIME` | **PARTIAL / SEPARATE PATH**                                 | OpenAI Realtime WebRTC flow, not the text adapter |
+| Capability       | Status                                                          | Current boundary                                      |
+| ---------------- | --------------------------------------------------------------- | ----------------------------------------------------- |
+| `SMART_GENERAL`  | **COMPLETE** when the server Forge configuration is present     | Existing server-side LLM adapter                      |
+| `FAST_GENERAL`   | **NOT IMPLEMENTED**                                             | No adapter                                            |
+| `VISION`         | **IMPLEMENTED** when the server OpenAI configuration is present | OpenAI Responses `input_image` / `input_file` adapter |
+| `VIDEO`          | **NOT IMPLEMENTED**                                             | No video provider pipeline                            |
+| `EMBEDDING`      | **NOT IMPLEMENTED**                                             | No embedding provider                                 |
+| `RESEARCH`       | **NOT IMPLEMENTED**                                             | No research tool layer                                |
+| `CODE`           | **NOT IMPLEMENTED**                                             | No code capability adapter                            |
+| `VOICE_REALTIME` | **PARTIAL / SEPARATE PATH**                                     | OpenAI Realtime WebRTC flow, not the text adapter     |
 
 An unconfigured adapter is reported as unavailable and cannot be selected. Unsupported capabilities fail with a JUNI-owned `unsupported_capability` error; provider failures are normalized into safe categories such as configuration, timeout, rate limiting, or provider error. Health metadata contains only provider ID, enabled state, supported capabilities, health state, and an optional error category. It never contains keys, authorization headers, secret URLs, or raw provider bodies.
 
-The existing untrusted-context envelope remains part of orchestration. Retrieved or uploaded content is passed as data inside `UNTRUSTED_CONTEXT` blocks and cannot become system authority. Realtime voice remains a distinct architecture with canonical JUNI/SONA personas, short-lived credentials, and WebRTC transport; it is not routed through normal text orchestration.
+The existing untrusted-context envelope remains part of orchestration. Retrieved or uploaded content is passed as data inside `UNTRUSTED_CONTEXT` blocks and cannot become system authority. The VISION prompt explicitly treats uploaded instructions as data and cannot grant permissions, override system policy, or invoke tools. Realtime voice remains a distinct architecture with canonical JUNI/SONA personas, short-lived credentials, and WebRTC transport; it is not routed through normal text orchestration.
+
+### VISION multimodal ingestion
+
+`files.analyze` is an authenticated, ephemeral multimodal analysis endpoint. The router validates the upload, resolves `VISION`, and passes a JUNI-owned request to the provider adapter. The adapter translates that request to the OpenAI Responses API: images use `input_image` with a bounded Base64 data URL and `detail: auto`; PDFs and plain text use `input_file` with filename and Base64 data URL, with PDF detail set to `auto`. Only safe filename, MIME type, analysis text, capability, and provider identifiers return to the client. Raw provider responses, headers, API credentials, and request payloads do not.
+
+Supported inputs are PNG, JPEG, WEBP, non-animated GIF, PDF, and plain text. The request accepts only a Base64 data URL whose declared MIME matches the validated MIME input, with a maximum data URL length of 12,000,000 characters. The client additionally rejects files above 8 MiB. The server does not trust filename extensions and does not accept remote URLs. Uploaded binaries are not stored in the database, messages, conversation metadata, logs, or audit events. The current file-analysis result remains ephemeral and is shown as a local compatibility note in the voice-first UI; it is not a knowledge base, RAG system, or long-term memory. The provider request shape follows the official [OpenAI image input](https://developers.openai.com/api/docs/guides/images-vision) and [file input](https://developers.openai.com/api/docs/guides/file-inputs) documentation.
 
 ## Authentication flow
 
@@ -96,7 +102,7 @@ The existing database role values are lowercase `user` and `admin`; these are th
 | Procedure or route            | Authorization and ownership                                                                                                                                                           |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `realtime.createClientSecret` | Authenticated user only; safety identifier is derived from `ctx.user.openId`; persona and language are allowlisted.                                                                   |
-| `files.analyze`               | Authenticated user only; analysis is ephemeral and provider credentials remain server-side.                                                                                           |
+| `files.analyze`               | Authenticated user only; validates bounded image/PDF/plain-text data URLs, resolves `VISION`, and returns safe ephemeral analysis only.                                               |
 | `account.dashboard`           | Authenticated user only; response identity is derived from `ctx.user.id`.                                                                                                             |
 | `account.getRechargeInfo`     | Authenticated user only; owner ID is server-derived.                                                                                                                                  |
 | `account.startRecharge`       | Authenticated user only; amount is validated and owner ID is server-derived. It remains preview-only.                                                                                 |
@@ -180,6 +186,12 @@ The test suite covers:
 - Unsupported, unconfigured, and separate realtime capabilities are rejected or reported truthfully.
 - Provider failures are normalized without leaking credentials or raw provider responses.
 - Orchestration preserves the untrusted-context data-only envelope and returns selected capability/provider metadata.
+- Authenticated image, PDF, and plain-text analysis through the VISION adapter.
+- Unauthenticated, unsupported-MIME, malformed-data-URL, mismatched-MIME, and oversized-upload rejection.
+- VISION unavailable/configuration and normalized provider failure behavior.
+- Server-derived safety identifier and absence of provider credentials from returned errors.
+- Uploaded instructions remain explicitly untrusted data.
+- Responses transport mapping for `input_image` and `input_file` content.
 
 ## Validation evidence
 
@@ -189,7 +201,7 @@ Validation is run from the real repository using the package scripts:
 | ------------------ | ------------------------------------------------------------------- |
 | `pnpm format`      | Passed; unrelated formatter churn was reverted after inspection.    |
 | `pnpm check`       | Passed.                                                             |
-| `pnpm test`        | Passed: 10 test files, 40 tests.                                    |
+| `pnpm test`        | Passed: 12 test files, 51 tests.                                    |
 | `pnpm build`       | Passed; Vite emitted the existing non-blocking large-chunk warning. |
 | `git diff --check` | Passed.                                                             |
 
@@ -201,4 +213,4 @@ The current JWT remains stateless with the existing one-year lifetime; logout ca
 
 The admin panel is intentionally an operational foundation rather than a claim of full administrative CRUD. Account status controls, provider configuration mutations, model availability controls, voice configuration persistence, memory/knowledge management, storage quotas, research/tool policies, feature flags, maintenance actions, diagnostics, and administrative access to private conversations remain unavailable.
 
-The file-analysis path remains ephemeral. Durable conversation continuity is the first persistence slice, not a complete memory or learning system. Existing pre-migration global `juni-history` data is intentionally not auto-imported; new temporary notes are namespaced by authenticated user ID to prevent cross-account leakage. A future explicit user-consented import can be designed separately.
+The file-analysis path remains ephemeral multimodal analysis, not a complete document knowledge base, RAG system, or memory/learning system. It does not support video, embeddings, research, browser/computer use, arbitrary file storage, or provider configuration mutation. Existing pre-migration global `juni-history` data is intentionally not auto-imported; new temporary notes are namespaced by authenticated user ID to prevent cross-account leakage. A future explicit user-consented import can be designed separately.

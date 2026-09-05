@@ -55,6 +55,15 @@ type HistoryItem = {
   text: string;
   createdAt: number;
 };
+const supportedVisionMimeTypes = [
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+  "application/pdf",
+  "text/plain",
+] as const;
+type SupportedVisionMimeType = (typeof supportedVisionMimeTypes)[number];
 
 function readHistory(storageKey: string): HistoryItem[] {
   try {
@@ -460,6 +469,13 @@ export default function Home() {
       setErrorMessage("Files must be smaller than 8 MB.");
       return;
     }
+    if (
+      !supportedVisionMimeTypes.includes(file.type as SupportedVisionMimeType)
+    ) {
+      setErrorMessage("Supported files are images, PDF, or plain text.");
+      return;
+    }
+    const mimeType = file.type as SupportedVisionMimeType;
     const dataUrl = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(String(reader.result));
@@ -469,7 +485,7 @@ export default function Home() {
     try {
       const result = await fileMutation.mutateAsync({
         name: file.name,
-        mimeType: file.type || "application/octet-stream",
+        mimeType,
         dataUrl,
       });
       setFileSummary(result.text);

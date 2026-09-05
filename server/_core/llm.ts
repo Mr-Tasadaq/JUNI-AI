@@ -19,7 +19,12 @@ export type FileContent = {
   type: "file_url";
   file_url: {
     url: string;
-    mime_type?: "audio/mpeg" | "audio/wav" | "application/pdf" | "audio/mp4" | "video/mp4" ;
+    mime_type?:
+      | "audio/mpeg"
+      | "audio/wav"
+      | "application/pdf"
+      | "audio/mp4"
+      | "video/mp4";
   };
 };
 
@@ -98,6 +103,25 @@ export type InvokeResult = {
     completion_tokens: number;
     total_tokens: number;
   };
+};
+
+export type VisionInput =
+  | {
+      kind: "image";
+      mimeType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
+      dataUrl: string;
+    }
+  | {
+      kind: "file";
+      mimeType: "application/pdf" | "text/plain";
+      filename: string;
+      dataUrl: string;
+    };
+
+export type VisionInvokeParams = {
+  prompt: string;
+  input: VisionInput;
+  safetyIdentifier?: string;
 };
 
 export type JsonSchema = {
@@ -312,9 +336,7 @@ const fetchWithBackoff = async (
         return response;
       }
 
-      const retryAfterMs = parseRetryAfter(
-        response.headers.get("retry-after")
-      );
+      const retryAfterMs = parseRetryAfter(response.headers.get("retry-after"));
       try {
         await response.body?.cancel();
       } catch {
@@ -420,6 +442,69 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   return (await response.json()) as InvokeResult;
 }
 
+export async function invokeVision(
+  params: VisionInvokeParams
+): Promise<string> {
+  if (!ENV.openAiApiKey) throw new Error("OPENAI_API_KEY is not configured");
+
+  const content =
+    params.input.kind === "image"
+      ? [
+          { type: "input_text", text: params.prompt },
+          {
+            type: "input_image",
+            image_url: params.input.dataUrl,
+            detail: "auto",
+          },
+        ]
+      : [
+          {
+            type: "input_file",
+            filename: params.input.filename,
+            file_data: params.input.dataUrl,
+            ...(params.input.mimeType === "application/pdf"
+              ? { detail: "auto" }
+              : {}),
+          },
+          { type: "input_text", text: params.prompt },
+        ];
+
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${ENV.openAiApiKey}`,
+    "Content-Type": "application/json",
+  };
+  if (params.safetyIdentifier) {
+    headers["OpenAI-Safety-Identifier"] = params.safetyIdentifier;
+  }
+
+  const response = await fetchWithBackoff(
+    "https://api.openai.com/v1/responses",
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        model: "gpt-4.1-mini",
+        input: [{ role: "user", content }],
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new Error(
+      `Vision provider request failed with status ${response.status}`
+    );
+  }
+
+  const body = (await response.json().catch(() => null)) as {
+    output_text?: unknown;
+  } | null;
+  if (typeof body?.output_text !== "string" || body.output_text.trim() === "") {
+    throw new Error("Vision provider returned an empty response");
+  }
+  return body.output_text.trim();
+}
+
 export type ModelInfo = {
   id: string;
   object: string;
@@ -435,9 +520,10 @@ export type ModelsResponse = {
 export async function listLLMModels(): Promise<ModelsResponse> {
   assertApiKey();
 
-  const url = ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0
-    ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/models`
-    : "https://forge.manus.im/v1/models";
+  const url =
+    ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0
+      ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/models`
+      : "https://forge.manus.im/v1/models";
 
   const response = await fetchWithBackoff(url, {
     headers: { authorization: `Bearer ${ENV.forgeApiKey}` },
