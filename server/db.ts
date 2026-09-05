@@ -5,6 +5,7 @@ import {
   conversations,
   InsertUser,
   messages,
+  semanticChunks,
   User,
   users,
 } from "../drizzle/schema";
@@ -422,4 +423,109 @@ export async function renameConversationForOwner(
     )
     .limit(1);
   return updated[0];
+}
+
+export type SemanticSourceType = "conversation_message";
+
+export type SemanticChunkWrite = {
+  id: string;
+  ownerId: number;
+  sourceType: SemanticSourceType;
+  sourceId: string;
+  chunkIndex: number;
+  content: string;
+  contentHash: string;
+  embedding: number[];
+  embeddingModel: string;
+  embeddingDimensions: number;
+  distanceMetric: "cosine";
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type SemanticChunkRow = SemanticChunkWrite;
+
+export async function replaceSemanticChunksForOwnerSource(
+  ownerId: number,
+  sourceType: SemanticSourceType,
+  sourceId: string,
+  rows: readonly SemanticChunkWrite[]
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+
+  await db.transaction(async tx => {
+    await tx
+      .delete(semanticChunks)
+      .where(
+        and(
+          eq(semanticChunks.ownerId, ownerId),
+          eq(semanticChunks.sourceType, sourceType),
+          eq(semanticChunks.sourceId, sourceId)
+        )
+      );
+    if (rows.length > 0) {
+      await tx.insert(semanticChunks).values(
+        rows.map(row => ({
+          id: row.id,
+          ownerId: row.ownerId,
+          sourceType: row.sourceType,
+          sourceId: row.sourceId,
+          chunkIndex: row.chunkIndex,
+          content: row.content,
+          contentHash: row.contentHash,
+          embedding: row.embedding,
+          embeddingModel: row.embeddingModel,
+          embeddingDimensions: row.embeddingDimensions,
+          distanceMetric: row.distanceMetric,
+          createdAt: row.createdAt,
+          updatedAt: row.updatedAt,
+        }))
+      );
+    }
+  });
+}
+
+export async function listSemanticChunksForOwner(
+  ownerId: number,
+  sourceType?: SemanticSourceType
+): Promise<SemanticChunkRow[]> {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+
+  const rows = await db
+    .select()
+    .from(semanticChunks)
+    .where(
+      sourceType
+        ? and(
+            eq(semanticChunks.ownerId, ownerId),
+            eq(semanticChunks.sourceType, sourceType)
+          )
+        : eq(semanticChunks.ownerId, ownerId)
+    )
+    .orderBy(asc(semanticChunks.createdAt), asc(semanticChunks.id));
+
+  return rows.map(row => ({
+    ...row,
+    embedding: Array.isArray(row.embedding) ? (row.embedding as number[]) : [],
+  }));
+}
+
+export async function deleteSemanticChunksForOwnerSource(
+  ownerId: number,
+  sourceType: SemanticSourceType,
+  sourceId: string
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  await db
+    .delete(semanticChunks)
+    .where(
+      and(
+        eq(semanticChunks.ownerId, ownerId),
+        eq(semanticChunks.sourceType, sourceType),
+        eq(semanticChunks.sourceId, sourceId)
+      )
+    );
 }

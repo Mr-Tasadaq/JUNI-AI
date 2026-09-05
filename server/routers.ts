@@ -395,6 +395,7 @@ export const appRouter = router({
           voice: "implemented" as const,
           fileAnalysis: visionStatus?.status ?? "unsupported",
           embedding: embeddingStatus?.status ?? "unsupported",
+          semanticIndex: "implemented" as const,
           billing: "preview_only" as const,
           durableMemory: "not_implemented" as const,
           auditLog: "implemented" as const,

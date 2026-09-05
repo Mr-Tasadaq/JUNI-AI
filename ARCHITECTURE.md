@@ -60,6 +60,18 @@ The current provider is OpenAI’s `/v1/embeddings` endpoint using the server-ow
 
 **Embedding generation is implemented; vector storage, semantic search, RAG, and long-term memory are not yet implemented.** No vector database, similarity function, chunking pipeline, retrieval API, or memory table was introduced. The request and result contracts remain provider-neutral so a future trusted memory or research service can consume them without exposing a browser-facing embedding endpoint. The request contract follows the official [OpenAI embeddings guide](https://developers.openai.com/api/docs/guides/embeddings) and [Create embeddings reference](https://developers.openai.com/api/reference/resources/embeddings/methods/create/).
 
+### Semantic index substrate
+
+The semantic-index milestone uses **Path B**, an explicitly interim compatibility layer. The repository uses generic `mysql2` and Drizzle configuration, but does not establish a HeatWave deployment. Current MySQL documentation describes native `VECTOR(N)` values, with a maximum of 16,383 entries and no use as a key; however, the documented `DISTANCE()` / `VECTOR_DISTANCE()` functions are available only for HeatWave MySQL on OCI and are not included in MySQL Commercial or Community distributions. See the official [MySQL VECTOR type documentation](https://dev.mysql.com/doc/refman/9.7/en/vector.html), [MySQL vector functions documentation](https://dev.mysql.com/doc/refman/9.1/en/vector-functions.html), and [HeatWave vector-store documentation](https://dev.mysql.com/doc/heatwave/en/mys-hw-genai-vector-store-overview.html).
+
+Accordingly, `semanticChunks` stores vectors as JSON arrays without lossy rounding, with explicit `embeddingModel`, `embeddingDimensions`, and `distanceMetric` metadata. This is not presented as a production-scale ANN/vector engine. The table is owner-scoped and represents semantic chunks rather than memories. Its source vocabulary is deliberately limited to `conversation_message`; no automatic conversation ingestion was added.
+
+The deterministic server-side chunker normalizes line endings, preserves source order, uses a bounded character segmentation strategy, limits chunks to 4,000 characters each and 64 chunks per source, and computes SHA-256 content hashes. Stable chunk IDs are derived from owner, source identity, chunk index, and content hash. Reindexing replaces only the exact owner/source rows inside a database transaction, so ordinary retries do not accumulate duplicate chunks.
+
+The trusted semantic service calls `resolveCapability("EMBEDDING")`, validates returned dimensions and finite numeric vectors, and persists only after embedding generation succeeds. Retrieval generates a query embedding through the same capability, compares only rows with matching model, dimensions, and cosine metric, and returns a reduced server-side DTO with cosine similarity scores in descending order. Owner filtering is enforced in database queries and again before scoring. There is no browser-facing semantic-search procedure, no vector response to the client, and no automatic prompt assembly. Retrieved content remains untrusted data and cannot change system instructions, permissions, tools, persona, or security policy.
+
+**Embedding generation is implemented. Vector storage and a trusted server-side semantic retrieval contract are implemented as infrastructure. RAG orchestration, automatic long-term memory, memory policy, and browser-facing semantic search remain unimplemented.**
+
 ## Authentication flow
 
 The browser starts Manus OAuth through `client/src/const.ts`. It creates a one-time nonce and writes the `__Host-oauth_state` cookie before redirecting to the Manus OAuth portal. `server/_core/oauth.ts` verifies the nonce, exchanges the authorization code, retrieves provider user information server-side, upserts the local `users` record by provider `openId`, signs a local session JWT, and sets an HttpOnly session cookie.
@@ -94,7 +106,7 @@ The administrative experience is `/admin`, implemented by `client/src/pages/Admi
 - Database configuration status without returning database credentials.
 - OpenAI Realtime model, transport, and provider-configured status.
 - SONA AI and JUNI AI voice/persona inventory.
-- Voice, protected file analysis, embedding generation, billing-preview, memory, and audit capability states.
+- Voice, protected file analysis, embedding generation, semantic-index infrastructure, billing-preview, memory, and audit capability states.
 - Explicit safe-boundary messaging for deferred administrative features.
 - User ID, name, email, role, created date, and last activity from the existing `users` model.
 - Searchable user list with role badges and a confirmation dialog for role changes.
@@ -205,6 +217,11 @@ The test suite covers:
 - Server-controlled model, float vector normalization, dimensions, and usage metadata.
 - Unconfigured embedding behavior, normalized provider failures, and absence of submitted text in errors.
 - Server-derived provider user identity and absence of vectors or credentials from results.
+- Deterministic semantic chunking, source ordering, chunk bounds, and SHA-256 content hashing.
+- Owner-scoped semantic ingestion, atomic owner/source replacement, and idempotent chunk identities.
+- Cross-user retrieval isolation, bounded top-K, cosine score ordering, and model/dimension matching.
+- Semantic provider reuse, dimension validation, database-unavailable safety, and owner-scoped deletion.
+- No public semantic-search procedure, raw provider persistence, vector logging, or automatic prompt assembly.
 
 ## Validation evidence
 
@@ -214,11 +231,11 @@ Validation is run from the real repository using the package scripts:
 | ------------------ | ------------------------------------------------------------------- |
 | `pnpm format`      | Passed; unrelated formatter churn was reverted after inspection.    |
 | `pnpm check`       | Passed.                                                             |
-| `pnpm test`        | Passed: 13 test files, 57 tests.                                    |
+| `pnpm test`        | Passed: 14 test files, 67 tests.                                    |
 | `pnpm build`       | Passed; Vite emitted the existing non-blocking large-chunk warning. |
 | `git diff --check` | Passed.                                                             |
 
-The durable audit schema is defined in `drizzle/schema.ts` and migration `drizzle/0002_durable_audit_events.sql`. Durable conversations and messages are defined in the same schema and migration `drizzle/0003_durable_conversations.sql`. Historical `conversations`, `messages`, and `storedFiles` SQL artifacts were inspected as remnants of an earlier schema; the committed conversation migration creates only the intended new tables and indexes, with no drops or resets. Migrations must be applied through the normal database workflow in an environment with the real `DATABASE_URL`; no live database migration was run in this validation environment.
+The durable audit schema is defined in `drizzle/schema.ts` and migration `drizzle/0002_durable_audit_events.sql`. Durable conversations and messages are defined in the same schema and migration `drizzle/0003_durable_conversations.sql`. The owner-scoped semantic index substrate is defined in `drizzle/schema.ts` and migration `drizzle/0004_semantic_index.sql`; it uses JSON vector storage as the documented interim Path B representation. Historical `conversations`, `messages`, and `storedFiles` SQL artifacts were inspected as remnants of an earlier schema; the committed migrations create only the intended new tables and indexes, with no drops or resets. Migrations must be applied through the normal database workflow in an environment with the real `DATABASE_URL`; no live database migration was run in this validation environment.
 
 ## Known limitations and next slices
 
@@ -226,4 +243,4 @@ The current JWT remains stateless with the existing one-year lifetime; logout ca
 
 The admin panel is intentionally an operational foundation rather than a claim of full administrative CRUD. Account status controls, provider configuration mutations, model availability controls, voice configuration persistence, memory/knowledge management, storage quotas, research/tool policies, feature flags, maintenance actions, diagnostics, and administrative access to private conversations remain unavailable.
 
-The file-analysis path remains ephemeral multimodal analysis, not a complete document knowledge base, RAG system, or memory/learning system. Embedding generation is implemented only as an internal service; vectors are not persisted and no semantic retrieval exists. The product still does not support video, research, browser/computer use, arbitrary file storage, or provider configuration mutation. Existing pre-migration global `juni-history` data is intentionally not auto-imported; new temporary notes are namespaced by authenticated user ID to prevent cross-account leakage. A future explicit user-consented import can be designed separately.
+The file-analysis path remains ephemeral multimodal analysis, not a complete document knowledge base, RAG system, or memory/learning system. The semantic index is a narrow owner-scoped infrastructure substrate, not a memory policy: it does not automatically ingest conversations, rank memories by personality, assemble prompts, or expose browser search. The product still does not support video, research, browser/computer use, arbitrary file storage, or provider configuration mutation. Existing pre-migration global `juni-history` data is intentionally not auto-imported; new temporary notes are namespaced by authenticated user ID to prevent cross-account leakage. A future explicit user-consented import can be designed separately.

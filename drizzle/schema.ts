@@ -4,6 +4,7 @@ import {
   json,
   mysqlEnum,
   mysqlTable,
+  uniqueIndex,
   text,
   timestamp,
   varchar,
@@ -95,9 +96,50 @@ export const messages = mysqlTable(
   })
 );
 
+/**
+ * Provider-neutral semantic index substrate. The embedding JSON is an interim
+ * compatibility representation because native MySQL vector distance functions
+ * are not guaranteed by the repository's generic mysql2 deployment.
+ */
+export const semanticChunks = mysqlTable(
+  "semanticChunks",
+  {
+    id: varchar("id", { length: 64 }).primaryKey(),
+    ownerId: int("ownerId").notNull(),
+    sourceType: mysqlEnum("sourceType", ["conversation_message"]).notNull(),
+    sourceId: varchar("sourceId", { length: 36 }).notNull(),
+    chunkIndex: int("chunkIndex").notNull(),
+    content: text("content").notNull(),
+    contentHash: varchar("contentHash", { length: 64 }).notNull(),
+    embedding: json("embedding").notNull(),
+    embeddingModel: varchar("embeddingModel", { length: 128 }).notNull(),
+    embeddingDimensions: int("embeddingDimensions").notNull(),
+    distanceMetric: mysqlEnum("distanceMetric", ["cosine"])
+      .default("cosine")
+      .notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  table => ({
+    ownerSourceChunkUnique: uniqueIndex(
+      "semantic_chunks_owner_source_chunk_uq"
+    ).on(table.ownerId, table.sourceType, table.sourceId, table.chunkIndex),
+    ownerCreatedIdx: index("semantic_chunks_owner_created_idx").on(
+      table.ownerId,
+      table.createdAt
+    ),
+    ownerSourceIdx: index("semantic_chunks_owner_source_idx").on(
+      table.ownerId,
+      table.sourceType,
+      table.sourceId
+    ),
+  })
+);
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type AuditEvent = typeof auditEvents.$inferSelect;
 export type InsertAuditEvent = typeof auditEvents.$inferInsert;
 export type Conversation = typeof conversations.$inferSelect;
 export type Message = typeof messages.$inferSelect;
+export type SemanticChunk = typeof semanticChunks.$inferSelect;
