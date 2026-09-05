@@ -8,6 +8,7 @@ export const ENV = {
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
   openAiApiKey: process.env.OPENAI_API_KEY ?? "",
+  googleWeatherApiKey: process.env.GOOGLE_WEATHER_API_KEY ?? "",
   embeddingModel:
     process.env.OPENAI_EMBEDDING_MODEL ?? "text-embedding-3-small",
 };

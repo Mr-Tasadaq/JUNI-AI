@@ -1,5 +1,11 @@
 import { z } from "zod";
 import type { User } from "../drizzle/schema";
+import { ENV } from "./_core/env";
+import {
+  lookupCurrentWeather,
+  WeatherAdapterError,
+  type WeatherLookupInput,
+} from "./weather";
 
 export const TOOL_RISK_LEVELS = [
   "read_only",
@@ -47,6 +53,11 @@ export class ToolRegistryError extends Error {
     | "unknown_tool"
     | "invalid_input"
     | "unauthenticated"
+    | "configuration"
+    | "timeout"
+    | "rate_limited"
+    | "provider_error"
+    | "malformed_response"
     | "execution_failed";
 
   constructor(
@@ -62,26 +73,27 @@ export class ToolRegistryError extends Error {
 
 const weatherInputSchema = z
   .object({
-    location: z.string().trim().min(1).max(120),
+    latitude: z.number().finite().min(-90).max(90),
+    longitude: z.number().finite().min(-180).max(180),
   })
   .strict();
 
-type WeatherInput = z.infer<typeof weatherInputSchema>;
+type WeatherInput = WeatherLookupInput;
 
 const emptyInputSchema = z.object({}).strict();
 type EmptyInput = z.infer<typeof emptyInputSchema>;
 
 const weatherLookup: ToolDefinition<WeatherInput> = {
   name: "weather.lookup",
-  description:
-    "Return a deterministic placeholder weather result without making a network request.",
+  description: "Return current weather for validated geographic coordinates.",
   riskLevel: "read_only",
   inputSchema: {
     type: "object",
     properties: {
-      location: { type: "string", minLength: 1, maxLength: 120 },
+      latitude: { type: "number", minimum: -90, maximum: 90 },
+      longitude: { type: "number", minimum: -180, maximum: 180 },
     },
-    required: ["location"],
+    required: ["latitude", "longitude"],
     additionalProperties: false,
   },
   requiresAuthentication: true,
@@ -98,12 +110,16 @@ const weatherLookup: ToolDefinition<WeatherInput> = {
     return result.data;
   },
   async execute(_context, input) {
-    return {
-      location: input.location,
-      status: "placeholder",
-      temperature: null,
-      source: "deterministic_tool_fixture",
-    };
+    try {
+      return await lookupCurrentWeather(input, ENV.googleWeatherApiKey);
+    } catch (error) {
+      if (error instanceof WeatherAdapterError) {
+        throw new ToolRegistryError(error.code, error.message, {
+          cause: error,
+        });
+      }
+      throw error;
+    }
   },
 };
 
