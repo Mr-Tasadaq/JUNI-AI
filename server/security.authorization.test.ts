@@ -5,7 +5,10 @@ import type { TrpcContext } from "./_core/context";
 import { isUserStorageKey } from "./_core/storageProxy";
 import { appRouter } from "./routers";
 
-function createContext(userId: number | null): TrpcContext {
+function createContext(
+  userId: number | null,
+  role: "user" | "admin" = "user"
+): TrpcContext {
   return {
     user:
       userId === null
@@ -16,7 +19,7 @@ function createContext(userId: number | null): TrpcContext {
             name: `Security User ${userId}`,
             email: `security-${userId}@example.com`,
             loginMethod: "test",
-            role: "user",
+            role,
             createdAt: new Date(),
             updatedAt: new Date(),
             lastSignedIn: new Date(),
@@ -64,6 +67,9 @@ describe("authentication and authorization boundaries", () => {
     ).rejects.toMatchObject({
       code: "UNAUTHORIZED",
     });
+    await expect(caller.admin.dashboard()).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+    });
   });
 
   it("derives ownership from the server context, not client input", async () => {
@@ -76,6 +82,23 @@ describe("authentication and authorization boundaries", () => {
 
     expect(result.userId).toBe(101);
     expect(result.userId).not.toBe(202);
+  });
+
+  it("allows admins but rejects normal users for admin procedures", async () => {
+    const userCaller = appRouter.createCaller(createContext(101));
+    const adminCaller = appRouter.createCaller(createContext(1, "admin"));
+
+    await expect(userCaller.admin.dashboard()).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    await expect(adminCaller.admin.dashboard()).resolves.toMatchObject({
+      viewer: { id: 1, role: "admin" },
+      system: { authentication: "manus_oauth" },
+      personas: expect.arrayContaining([
+        expect.objectContaining({ id: "juni", name: "JUNI AI" }),
+        expect.objectContaining({ id: "sona", name: "SONA AI" }),
+      ]),
+    });
   });
 
   it("denies cross-user storage keys", () => {

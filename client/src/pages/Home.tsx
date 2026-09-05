@@ -13,6 +13,7 @@ import {
   History,
   Image as ImageIcon,
   Languages,
+  LockKeyhole,
   Loader2,
   LogIn,
   Mic,
@@ -20,6 +21,7 @@ import {
   MoreHorizontal,
   Radio,
   ShieldCheck,
+  Shield,
   Sparkles,
   Upload,
   UserRound,
@@ -483,6 +485,35 @@ export default function Home() {
     [status]
   );
 
+  if (loading) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-[#080b13] text-sm text-white/55">
+        Loading secure user panel…
+      </div>
+    );
+  }
+  if (!isAuthenticated) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-[#080b13] p-6 text-center text-white">
+        <div>
+          <LockKeyhole className="mx-auto mb-4 size-10 text-emerald-300" />
+          <h1 className="font-display text-3xl font-semibold">
+            Sign in to JUNI AI
+          </h1>
+          <p className="mt-2 text-sm text-white/45">
+            Your voice panel, preferences, and private context are protected.
+          </p>
+          <button
+            onClick={startLogin}
+            className="mt-6 rounded-xl bg-emerald-300 px-5 py-3 text-sm font-semibold text-[#080b13]"
+          >
+            Sign in
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen overflow-hidden bg-[#080b13] text-white selection:bg-emerald-300 selection:text-[#080b13]">
       <div
@@ -563,6 +594,17 @@ export default function Home() {
               >
                 Security audit <ArrowUpRight className="size-3.5" />
               </a>
+              {user?.role === "admin" && (
+                <a
+                  href="/admin"
+                  className="mt-2 flex items-center justify-between rounded-xl bg-emerald-300/10 px-3 py-2 text-xs text-emerald-100 hover:bg-emerald-300/15"
+                >
+                  <span className="flex items-center gap-2">
+                    <Shield className="size-3.5" /> Admin control center
+                  </span>
+                  <ArrowUpRight className="size-3.5" />
+                </a>
+              )}
             </div>
           )}
         </div>

@@ -4,6 +4,7 @@ import NotFound from "@/pages/NotFound";
 import Audit from "@/pages/Audit";
 import Journal from "@/pages/Journal";
 import ControlCenter from "@/pages/ControlCenter";
+import AdminPanel from "@/pages/AdminPanel";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
@@ -14,6 +15,7 @@ function Router() {
   return (
     <Switch>
       <Route path={"/"} component={Home} />
+      <Route path={"/admin"} component={AdminPanel} />
       <Route path={"/journal"} component={Journal} />
       <Route path={"/control-center"} component={ControlCenter} />
       <Route path={"/audit"} component={Audit} />

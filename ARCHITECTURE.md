@@ -1,77 +1,129 @@
-# JUNI AI Architecture and Authentication Record
+# JUNI AI Architecture Record
 
 ## Current status
 
-**Status: PARTIAL, AUTHENTICATION HARDENED.** JUNI AI uses the existing Manus OAuth/session foundation. The current repository has protected tRPC procedures for realtime client-secret creation, file analysis, and account preview operations, plus an admin-only owner notification procedure. Durable conversation, message, memory, project, task, and file-metadata resources are not currently implemented in the active schema or router. Their future implementations must use the same server-derived ownership model before they are exposed.
+**Status: PARTIAL.** JUNI AI now has two separated application experiences inside one shared platform: an authenticated user panel at `/` and a server-authorized admin control center at `/admin`. The existing Manus OAuth/session foundation, OpenAI Realtime WebRTC flow, server-side provider boundary, and canonical JUNI/SONA persona contract remain intact.
+
+The admin slice currently provides operational health, provider/model status, voice/persona inventory, and truthful capability limits. Full user CRUD, role mutations, memory administration, durable audit events, storage quota controls, feature flags, and maintenance mutations remain deferred because the active repository does not yet have those domain tables or service contracts.
+
+## Shared platform boundaries
+
+Authentication, authorization, persona configuration, realtime orchestration, safe tools, file analysis, provider credentials, and security policy are shared platform concerns. SONA AI and JUNI AI are not separate products; they are two controlled assistant identities selected within the same authenticated JUNI platform.
+
+The canonical persona definitions remain in `shared/juni.ts`. They define exactly two primary user-facing personas:
+
+| Persona     | Gender | Voice   | Product behavior                                                           |
+| ----------- | ------ | ------- | -------------------------------------------------------------------------- |
+| **JUNI AI** | Male   | `cedar` | Confident, calm, clever, supportive, witty, and emotionally responsive.    |
+| **SONA AI** | Female | `marin` | Warm, playful, expressive, witty, intelligent, and emotionally responsive. |
+
+No provider credential or duplicated system prompt is introduced in the browser. The server receives a validated persona ID and language ID, loads the canonical configuration, and creates the short-lived OpenAI Realtime client secret with the matching voice and instructions.
 
 ## Authentication flow
 
-The browser starts Manus OAuth through `client/src/const.ts`. The client creates a one-time nonce and writes the `__Host-oauth_state` cookie, then redirects to the Manus OAuth portal with an encoded state containing the callback URI and nonce. `server/_core/oauth.ts` receives the callback, verifies that the state nonce matches the cookie, exchanges the authorization code with the Manus OAuth service, retrieves user information server-side, upserts the user by the provider `openId`, signs a local HS256 session JWT, and sets the session cookie.
+The browser starts Manus OAuth through `client/src/const.ts`. It creates a one-time nonce and writes the `__Host-oauth_state` cookie before redirecting to the Manus OAuth portal. `server/_core/oauth.ts` verifies the nonce, exchanges the authorization code, retrieves provider user information server-side, upserts the local `users` record by provider `openId`, signs a local session JWT, and sets an HttpOnly session cookie.
 
-The session cookie is `httpOnly`, path-scoped to `/`, and transport-aware: production HTTPS uses `secure: true` and `SameSite=None` for the existing cross-site OAuth deployment model; local HTTP uses `secure: false` and `SameSite=Lax` so development does not require an insecure `SameSite=None` cookie. The JWT contains only the provider `openId`, application ID, and display name. `server/_core/sdk.ts` verifies the JWT signature and algorithm, rejects missing or malformed claims, resolves the provider identity to the local `users` row, and returns that database-derived user to the request context.
+`server/_core/context.ts` calls `sdk.authenticateRequest` for every request. `server/_core/sdk.ts` verifies the JWT and resolves the provider identity to the local database user. The authenticated application user is therefore established from the server-side session and database record, not from browser state. The authenticated user ID is `ctx.user.id`.
 
-`server/_core/context.ts` calls `sdk.authenticateRequest` for every tRPC request. Authentication failures are intentionally converted to `user: null` so public procedures remain available. `protectedProcedure` then rejects a missing user with the standard `UNAUTHORIZED` tRPC error; `adminProcedure` additionally requires the database-derived `role` to be `admin`. The browser uses `credentials: include` for tRPC requests and no longer mirrors the session token into `sessionStorage` or forwards a browser-held Bearer token.
+The session cookie is request-aware: HTTPS uses `Secure` and `SameSite=None` for the existing OAuth deployment model, while local HTTP uses `SameSite=Lax`. The browser uses `credentials: include` and does not mirror session credentials into `localStorage` or `sessionStorage`. Long-lived provider credentials remain server environment values.
 
-The only remaining non-cookie session path is server-side compatibility for scheduled-task sessions and explicitly supplied server/runtime Authorization headers handled by `sdk.authenticateRequest`; the browser client does not create, store, or forward those headers.
+## User Panel architecture
+
+The user experience is the authenticated `/` route implemented by `client/src/pages/Home.tsx`. It is mobile-first and voice-first rather than a conventional text-chat product. It provides:
+
+- Explicit SONA AI / JUNI AI persona switching.
+- Current persona name, gender, role, accent, and voice identity.
+- WebRTC connection, microphone, listening, speaking, and error indicators.
+- Short-lived server-brokered OpenAI Realtime credentials.
+- Language selection using the shared supported-language contract.
+- Local browser session notes, recording export, protected file analysis, and confirmation-gated tools.
+- Account and safe-preview billing information through protected server procedures.
+
+An unauthenticated request receives an authentication gate instead of the private voice panel. The UI may show a sign-in control, but server procedures remain the actual security boundary. The local conversation history is explicitly browser-local and is not represented as durable private server data.
+
+Persona switching is deterministic: selecting a persona closes any active session, updates the shared persona ID, updates the UI identity/greeting, and causes the next protected `realtime.createClientSecret` request to load that persona’s server-side system instructions and configured voice. The browser receives only the temporary client secret and selected voice needed for WebRTC negotiation.
+
+## Admin Panel architecture
+
+The administrative experience is `/admin`, implemented by `client/src/pages/AdminPanel.tsx`. It uses the same visual language as the user panel but with denser operational information. It currently displays:
+
+- System health and authentication mode.
+- Database configuration status without returning database credentials.
+- OpenAI Realtime model, transport, and provider-configured status.
+- SONA AI and JUNI AI voice/persona inventory.
+- Voice, protected file analysis, billing-preview, memory, and audit capability states.
+- Explicit safe-boundary messaging for deferred administrative features.
+
+The route is not secured by hiding a link. The `admin.dashboard` tRPC procedure uses `adminProcedure`, which requires an authenticated `ctx.user` and the server-derived `role === "admin"`. A normal user receives `FORBIDDEN` even if they navigate directly to `/admin`, change URL state, or forge client input. The frontend role check only controls presentation and query enablement; it is not the authorization boundary.
+
+The existing database role values are lowercase `user` and `admin`; these are the repository’s persisted equivalents of the product-level **USER** and **ADMIN** roles. No competing role system or schema migration was introduced. The existing owner-openId bootstrap behavior remains the source of the initial administrator assignment.
 
 ## Authorization model
 
-The server is the identity authority. Protected procedures never accept a client-supplied owner ID. The account dashboard, recharge information, and recharge intent derive `userId` directly from `ctx.user.id`. Supplying an extra `userId` field to the recharge input cannot override the authenticated identity; the server response continues to use the context user.
+`protectedProcedure` rejects unauthenticated requests. `adminProcedure` rejects unauthenticated requests and authenticated users whose server-derived role is not `admin`. Current protected procedures are:
 
-The active protected procedures are:
+| Procedure or route            | Authorization and ownership                                                                                         |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `realtime.createClientSecret` | Authenticated user only; safety identifier is derived from `ctx.user.openId`; persona and language are allowlisted. |
+| `files.analyze`               | Authenticated user only; analysis is ephemeral and provider credentials remain server-side.                         |
+| `account.dashboard`           | Authenticated user only; response identity is derived from `ctx.user.id`.                                           |
+| `account.getRechargeInfo`     | Authenticated user only; owner ID is server-derived.                                                                |
+| `account.startRecharge`       | Authenticated user only; amount is validated and owner ID is server-derived. It remains preview-only.               |
+| `admin.dashboard`             | Admin only; returns operational data only after server role verification.                                           |
+| `system.notifyOwner`          | Existing admin-only procedure.                                                                                      |
+| `GET /manus-storage/*`        | Authenticated and restricted to `users/{ctx.user.id}/` storage keys.                                                |
 
-| Procedure or route            | Boundary             | Ownership behavior                                                                                                               |
-| ----------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `realtime.createClientSecret` | `protectedProcedure` | Uses the authenticated user’s `openId` for the server-side OpenAI safety identifier; the provider API key remains server-only.   |
-| `files.analyze`               | `protectedProcedure` | Requires authentication; accepts ephemeral client file content for analysis and does not persist metadata in the current schema. |
-| `account.dashboard`           | `protectedProcedure` | Derives the returned account identity from `ctx.user.id`.                                                                        |
-| `account.getRechargeInfo`     | `protectedProcedure` | Returns the authenticated `ctx.user.id`, never a client-supplied owner.                                                          |
-| `account.startRecharge`       | `protectedProcedure` | Validates the amount and derives the returned owner from `ctx.user.id`; it does not initiate payment.                            |
-| `system.notifyOwner`          | `adminProcedure`     | Requires a database-derived admin role.                                                                                          |
-| `GET /manus-storage/*`        | Authenticated route  | Requires a valid session and accepts only keys under `users/{ctx.user.id}/`; other users’ keys return a generic 404.             |
+A client-supplied owner ID cannot override `ctx.user.id`. Cross-user storage paths return a generic 404. Future conversations, messages, memory, projects, tasks, file metadata, and administrative mutations must add owner-scoped queries, input schemas, authorization checks, and cross-user tests before being exposed.
 
-Future private conversation, message, file metadata, memory, project, and task tables must include an owner column and indexed owner-scoped queries. Every read, update, delete, and provider-backed action must constrain the resource lookup by both resource identifier and `ctx.user.id`. No current table exists for those domains, so no unrelated schema migration was introduced in this hardening step.
+## Security decisions and findings
 
-## Security findings and changes
+The authentication hardening work addressed the following findings:
 
-The audit found that the Manus OAuth/session foundation was functional and retained. The following risks were addressed:
+| Finding                                                                             | Change                                                                                               |
+| ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Browser session token was mirrored into `sessionStorage` and sent as a Bearer token | Removed the browser fallback; the browser uses the HttpOnly cookie transport only.                   |
+| Runtime identity was written to `localStorage`                                      | Removed the identity persistence write.                                                              |
+| Storage proxy had no explicit application authorization                             | Added authentication and user-key ownership enforcement.                                             |
+| Local HTTP used an insecure `SameSite=None` combination                             | Local HTTP now uses `SameSite=Lax`; secure deployment keeps the required secure cross-site behavior. |
+| OAuth state-cookie cleanup used hard-coded options                                  | Reused request-aware cookie options.                                                                 |
+| Provider errors could expose provider details                                       | Provider failures return a generic error and log only operation/status metadata.                     |
+| Admin access could have been treated as frontend state                              | Added `adminProcedure`-protected `admin.dashboard` and normal-user denial tests.                     |
 
-| Finding                                                                                  | Severity | Change                                                                                                                                                             |
-| ---------------------------------------------------------------------------------------- | -------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Browser session token was mirrored into `sessionStorage` and forwarded as a Bearer token |     High | Removed the browser fallback from `client/src/main.tsx`; the browser now uses the HttpOnly cookie transport only. Logout no longer manages a browser token mirror. |
-| Runtime user identity was written to `localStorage` by the auth hook                     |   Medium | Removed the write; current user state remains in the tRPC query cache.                                                                                             |
-| Storage proxy had no explicit application authentication or owner boundary               |     High | Added server authentication and enforced the `users/{numericUserId}/` key prefix. Unauthenticated requests receive 401; non-owner paths receive generic 404.       |
-| Local HTTP used `SameSite=None` with `secure: false`                                     |   Medium | Cookie options now use `SameSite=None` only for secure requests and `SameSite=Lax` for local HTTP.                                                                 |
-| OAuth state-cookie cleanup used hard-coded cookie options                                |   Medium | Cleanup now reuses the request-aware cookie option helper.                                                                                                         |
-| Provider error details could be returned through thrown errors                           |   Medium | Provider failures now log only an operation and status and return a generic tRPC service-unavailable message.                                                      |
-| Client-supplied identity override was not explicitly regression-tested                   |   Medium | Added a test proving account output uses the server context ID even when an extra `userId` field is supplied.                                                      |
+The short-lived Realtime client secret is intentionally delivered to an authenticated browser because WebRTC requires it. The long-lived `OPENAI_API_KEY`, Forge credentials, database credentials, and admin secrets remain server-only. No credentials are placed in URLs, query parameters, client storage, source code, screenshots, or rendered provider errors.
 
-The audit found no long-lived OpenAI or Forge API key in client code. The short-lived realtime client secret is intentionally returned by the protected server procedure because WebRTC requires it in the browser; the long-lived `OPENAI_API_KEY` and `BUILT_IN_FORGE_API_KEY` remain server environment values. The client-side map configuration is a separate configured frontend credential path and was not expanded by this change.
+Administrative mutations are intentionally limited in this slice. Since no durable audit-event table exists, the admin dashboard does not claim to provide an audit log. Consequential admin mutations must not be added without an auditable server-side operation contract.
 
-## Tests added
+## Tests added and maintained
 
-`server/security.authorization.test.ts` adds regression coverage for unauthenticated rejection of every current protected procedure, server-context ownership overriding an extra client `userId`, cross-user storage-key denial, and a recursive client-source scan that rejects privileged provider credentials and browser session-token forwarding. Existing logout, identity-contract, safe-tool, and orchestration tests remain in place.
+The test suite covers:
+
+- Unauthenticated rejection of current protected procedures.
+- Normal-user denial of `admin.dashboard`.
+- Admin access to `admin.dashboard`.
+- Client identity cannot override server identity.
+- Cross-user and unauthenticated storage-key denial.
+- Generic provider errors without configuration leakage.
+- Provider credentials and browser session forwarding absent from client code.
+- Canonical SONA and JUNI genders, voices, IDs, languages, and safe tools.
 
 ## Validation evidence
 
-The following commands were run after the hardening changes:
+Validation is run from the real repository using the package scripts:
 
-| Check                 | Result                                                             |
-| --------------------- | ------------------------------------------------------------------ |
-| Scoped Prettier check | Passed for changed source, tests, and documentation                |
-| `pnpm check`          | Passed with no TypeScript errors                                   |
-| `pnpm test`           | Passed: 5 test files, 15 tests                                     |
-| `pnpm build`          | Passed; Vite emitted the existing non-blocking large-chunk warning |
-| `git diff --check`    | Passed                                                             |
+| Check                 | Result                                                              |
+| --------------------- | ------------------------------------------------------------------- |
+| Scoped Prettier check | Passed for changed source, tests, and documentation.                |
+| `pnpm check`          | TypeScript validation passed.                                       |
+| `pnpm test`           | Passed: 5 test files, 17 tests.                                     |
+| `pnpm build`          | Passed; Vite emitted the existing non-blocking large-chunk warning. |
+| `git diff --check`    | Passed.                                                             |
 
-No database migration was generated or applied. The current schema contains only the users table in the active TypeScript source, so there is no existing durable private-resource model to migrate during this step.
+No database migration was created. The existing users role column already supports the required USER/ADMIN model, and the new admin dashboard is read-only.
 
-## Remaining limitations
+## Known limitations and next slices
 
-The local JWT is stateless and has the existing one-year lifetime; logout clears the cookie but cannot revoke a copied token before expiration. A future production hardening milestone should add rotation and server-side revocation or shorten the session lifetime after the deployment threat model is confirmed.
+The current JWT remains stateless with the existing one-year lifetime; logout cannot revoke a copied token before expiration. A future production hardening slice should add token rotation and revocation or shorten the lifetime after the deployment threat model is confirmed.
 
-The storage key prefix is now an enforced boundary for the existing proxy, but the repository does not yet contain a stored-file metadata table or an upload procedure that constructs `users/{userId}/...` keys. A future upload feature must create the owner-scoped key server-side and persist metadata only after a successful storage write.
+The admin panel is intentionally an operational foundation rather than a claim of full administrative CRUD. User management, role changes, account status controls, provider configuration mutations, model availability controls, voice configuration persistence, memory/knowledge management, storage quotas, research/tool policies, feature flags, maintenance actions, diagnostics, and audit events require real domain contracts and should be implemented one auditable server procedure at a time.
 
-Conversations, messages, memories, projects, and tasks are not currently implemented in the active server router or schema. They must not be treated as private-resource features until their tables, owner indexes, server-side authorization checks, deletion semantics, and cross-user tests exist. The current file-analysis procedure is ephemeral and protected but does not persist file metadata.
-
-The existing Manus OAuth callback depends on the configured OAuth service and database environment. Local development can run without those services, but authenticated integration tests require the real environment or a dedicated test double. Provider availability, database connectivity, and scheduled-task behavior remain deployment concerns outside this unit-level hardening step.
+The user panel still uses local browser history and the file-analysis path remains ephemeral. Durable conversation, message, memory, project, task, and file metadata ownership will require controlled schema migrations and owner-scoped service methods before those features are enabled.

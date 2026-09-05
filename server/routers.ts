@@ -13,7 +13,12 @@ import type { UserId } from "@shared/types";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { ENV } from "./_core/env";
 import { systemRouter } from "./_core/systemRouter";
-import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import {
+  adminProcedure,
+  protectedProcedure,
+  publicProcedure,
+  router,
+} from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 
 const amountSchema = z.number().finite().min(100).max(100_000);
@@ -210,6 +215,38 @@ export const appRouter = router({
             "Recharge intent recorded in the safe preview layer. A verified payment provider must be connected before checkout can begin.",
         };
       }),
+  }),
+  admin: router({
+    dashboard: adminProcedure.query(({ ctx }) => ({
+      viewer: {
+        id: ctx.user.id,
+        name: ctx.user.name,
+        role: ctx.user.role,
+      },
+      system: {
+        status: "operational" as const,
+        authentication: "manus_oauth" as const,
+        database: process.env.DATABASE_URL ? "configured" : "not_configured",
+      },
+      provider: {
+        openAiConfigured: Boolean(ENV.openAiApiKey),
+        realtimeModel: REALTIME_MODEL,
+        realtimeTransport: "webrtc" as const,
+      },
+      personas: Object.values(JUNI_PERSONAS).map(persona => ({
+        id: persona.id,
+        name: persona.name,
+        gender: persona.gender,
+        voice: persona.voiceName,
+      })),
+      capabilities: {
+        voice: "implemented" as const,
+        fileAnalysis: "protected" as const,
+        billing: "preview_only" as const,
+        durableMemory: "not_implemented" as const,
+        auditLog: "not_implemented" as const,
+      },
+    })),
   }),
 });
 
