@@ -1,15 +1,21 @@
-import { invokeLLM } from "./_core/llm";
+import {
+  normalizeCapabilityError,
+  resolveCapability,
+  type Capability,
+} from "./capabilities";
 
 export type OrchestrationRequest = {
   systemInstructions: string;
   userInput: string;
+  capability?: Capability;
   untrustedContext?: string[];
   history?: Array<{ role: "user" | "assistant"; content: string }>;
 };
 
 export type OrchestrationResult = {
   content: string;
-  capability: "SMART_GENERAL";
+  capability: Capability;
+  provider: string;
   providerBoundary: "server";
 };
 
@@ -47,6 +53,8 @@ function extractText(content: unknown): string {
 export async function orchestrateConversation(
   request: OrchestrationRequest
 ): Promise<OrchestrationResult> {
+  const capability = request.capability ?? "SMART_GENERAL";
+  const resolution = resolveCapability(capability);
   const messages = [
     {
       role: "system" as const,
@@ -62,13 +70,20 @@ export async function orchestrateConversation(
     },
   ];
 
-  const response = await invokeLLM({ messages });
+  let response;
+  try {
+    response = await resolution.adapter.invoke({ messages });
+  } catch (error) {
+    throw normalizeCapabilityError(error);
+  }
+
   const content = extractText(response.choices?.[0]?.message?.content);
   if (!content) throw new Error("The AI provider returned an empty response");
 
   return {
     content,
-    capability: "SMART_GENERAL",
+    capability,
+    provider: resolution.provider,
     providerBoundary: "server",
   };
 }

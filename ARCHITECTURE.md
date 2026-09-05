@@ -19,6 +19,33 @@ The canonical persona definitions remain in `shared/juni.ts`. They define exactl
 
 No provider credential or duplicated system prompt is introduced in the browser. The server receives a validated persona ID and language ID, loads the canonical configuration, and creates the short-lived OpenAI Realtime client secret with the matching voice and instructions.
 
+## Provider and capability architecture
+
+The normal text orchestration path is provider-neutral at the JUNI boundary:
+
+```text
+Application / orchestrator → JUNI capability contract → provider adapter → external provider
+```
+
+`server/capabilities.ts` owns the capability vocabulary, adapter contract, deterministic resolution, safe provider-health metadata, and normalized provider errors. `server/orchestration.ts` requests a capability and uses the selected adapter; it does not call a vendor transport directly. The current adapter wraps the existing server-only `invokeLLM` implementation rather than duplicating its request normalization, retries, tools, structured output, or model behavior.
+
+The capability registry is intentionally truthful:
+
+| Capability       | Status                                                      | Current boundary                                  |
+| ---------------- | ----------------------------------------------------------- | ------------------------------------------------- |
+| `SMART_GENERAL`  | **COMPLETE** when the server Forge configuration is present | Existing server-side LLM adapter                  |
+| `FAST_GENERAL`   | **NOT IMPLEMENTED**                                         | No adapter                                        |
+| `VISION`         | **NOT IMPLEMENTED**                                         | No dedicated capability adapter                   |
+| `VIDEO`          | **NOT IMPLEMENTED**                                         | No video provider pipeline                        |
+| `EMBEDDING`      | **NOT IMPLEMENTED**                                         | No embedding provider                             |
+| `RESEARCH`       | **NOT IMPLEMENTED**                                         | No research tool layer                            |
+| `CODE`           | **NOT IMPLEMENTED**                                         | No code capability adapter                        |
+| `VOICE_REALTIME` | **PARTIAL / SEPARATE PATH**                                 | OpenAI Realtime WebRTC flow, not the text adapter |
+
+An unconfigured adapter is reported as unavailable and cannot be selected. Unsupported capabilities fail with a JUNI-owned `unsupported_capability` error; provider failures are normalized into safe categories such as configuration, timeout, rate limiting, or provider error. Health metadata contains only provider ID, enabled state, supported capabilities, health state, and an optional error category. It never contains keys, authorization headers, secret URLs, or raw provider bodies.
+
+The existing untrusted-context envelope remains part of orchestration. Retrieved or uploaded content is passed as data inside `UNTRUSTED_CONTEXT` blocks and cannot become system authority. Realtime voice remains a distinct architecture with canonical JUNI/SONA personas, short-lived credentials, and WebRTC transport; it is not routed through normal text orchestration.
+
 ## Authentication flow
 
 The browser starts Manus OAuth through `client/src/const.ts`. It creates a one-time nonce and writes the `__Host-oauth_state` cookie before redirecting to the Manus OAuth portal. `server/_core/oauth.ts` verifies the nonce, exchanges the authorization code, retrieves provider user information server-side, upserts the local `users` record by provider `openId`, signs a local session JWT, and sets an HttpOnly session cookie.
@@ -119,6 +146,10 @@ The test suite covers:
 - Generic provider errors without configuration leakage.
 - Provider credentials and browser session forwarding absent from client code.
 - Canonical SONA and JUNI genders, voices, IDs, languages, and safe tools.
+- `SMART_GENERAL` resolution through the real server-side provider adapter.
+- Unsupported, unconfigured, and separate realtime capabilities are rejected or reported truthfully.
+- Provider failures are normalized without leaking credentials or raw provider responses.
+- Orchestration preserves the untrusted-context data-only envelope and returns selected capability/provider metadata.
 
 ## Validation evidence
 
@@ -126,11 +157,11 @@ Validation is run from the real repository using the package scripts:
 
 | Check                 | Result                                                              |
 | --------------------- | ------------------------------------------------------------------- |
-| Scoped Prettier check | Passed for changed source, tests, and documentation.                |
-| `pnpm check`          | TypeScript validation passed.                                       |
-| `pnpm test`           | Passed: 7 test files, 26 tests.                                     |
-| `pnpm build`          | Passed; Vite emitted the existing non-blocking large-chunk warning. |
-| `git diff --check`    | Passed.                                                             |
+| `pnpm format`          | Passed; unrelated formatter churn was reverted after inspection.    |
+| `pnpm check`           | Passed.                                                             |
+| `pnpm test`            | Passed: 8 test files, 31 tests.                                     |
+| `pnpm build`           | Passed; Vite emitted the existing non-blocking large-chunk warning. |
+| `git diff --check`     | Passed.                                                             |
 
 No database migration was created. The existing `users.role` column already supports the required USER/ADMIN model, and the new user-management procedures reuse it. No account-status field or audit-event table exists in the active schema.
 
