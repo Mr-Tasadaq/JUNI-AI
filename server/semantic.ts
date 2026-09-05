@@ -6,6 +6,7 @@ import {
 } from "./capabilities";
 import {
   deleteSemanticChunksForOwnerSource,
+  getCanonicalConversationMessageForSemantic,
   listSemanticChunksForOwner,
   replaceSemanticChunksForOwnerSource,
   type SemanticChunkRow,
@@ -31,7 +32,6 @@ export type SemanticIngestRequest = {
   ownerId: number;
   sourceType: SemanticSourceType;
   sourceId: string;
-  content: string;
 };
 
 export type SemanticIngestResult = {
@@ -184,7 +184,21 @@ export async function ingestSemanticSource(
 ): Promise<SemanticIngestResult> {
   assertOwnerId(request.ownerId);
   assertSource(request.sourceType, request.sourceId);
-  const chunks = chunkSemanticText(request.content);
+  const canonical =
+    request.sourceType === "conversation_message"
+      ? await getCanonicalConversationMessageForSemantic(
+          request.ownerId,
+          request.sourceId
+        )
+      : undefined;
+  if (
+    !canonical ||
+    canonical.id !== request.sourceId ||
+    canonical.ownerId !== request.ownerId
+  ) {
+    throw new Error("Semantic source not found");
+  }
+  const chunks = chunkSemanticText(canonical.content);
   const resolution = resolveCapability("EMBEDDING");
   const embedding = await resolution.adapter.invokeEmbedding!({
     input: chunks.map(chunk => chunk.content),
@@ -278,6 +292,8 @@ export async function searchSemanticIndex(
     .filter(
       row =>
         row.ownerId === request.ownerId &&
+        row.canonicalContent !== undefined &&
+        isCurrentCanonicalChunk(row) &&
         row.distanceMetric === SEMANTIC_DISTANCE_METRIC &&
         row.embeddingModel === queryEmbedding.model &&
         row.embeddingDimensions === queryEmbedding.dimensions
@@ -302,6 +318,14 @@ export async function searchSemanticIndex(
       content: row.content,
       score,
     }));
+}
+
+function isCurrentCanonicalChunk(row: SemanticChunkRow): boolean {
+  if (row.canonicalContent === undefined) return false;
+  return chunkSemanticText(row.canonicalContent).some(
+    chunk =>
+      chunk.index === row.chunkIndex && chunk.contentHash === row.contentHash
+  );
 }
 
 export async function deleteSemanticSource(

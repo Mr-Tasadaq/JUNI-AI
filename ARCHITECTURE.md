@@ -58,7 +58,7 @@ Supported inputs are PNG, JPEG, WEBP, non-animated GIF, PDF, and plain text. The
 
 The current provider is OpenAI’s `/v1/embeddings` endpoint using the server-owned `OPENAI_EMBEDDING_MODEL` value, defaulting to `text-embedding-3-small`. Requests explicitly use `encoding_format: float` and pass a hashed server-derived user identifier when available. The normalized result contains only the configured/provider-returned model name, `number[][]` vectors, vector dimensions, input count, and safe token usage metadata. The default vector dimension is 1536 for `text-embedding-3-small`; no vectors are rounded, truncated, logged, placed in client storage, or persisted in the current database.
 
-**Embedding generation is implemented; vector storage, semantic search, RAG, and long-term memory are not yet implemented.** No vector database, similarity function, chunking pipeline, retrieval API, or memory table was introduced. The request and result contracts remain provider-neutral so a future trusted memory or research service can consume them without exposing a browser-facing embedding endpoint. The request contract follows the official [OpenAI embeddings guide](https://developers.openai.com/api/docs/guides/embeddings) and [Create embeddings reference](https://developers.openai.com/api/reference/resources/embeddings/methods/create/).
+**Embedding generation is implemented as an internal provider capability.** The request and result contracts remain provider-neutral so trusted server services can consume them without exposing a browser-facing embedding endpoint. The request contract follows the official [OpenAI embeddings guide](https://developers.openai.com/api/docs/guides/embeddings) and [Create embeddings reference](https://developers.openai.com/api/reference/resources/embeddings/methods/create/).
 
 ### Semantic index substrate
 
@@ -68,9 +68,13 @@ Accordingly, `semanticChunks` stores vectors as JSON arrays without lossy roundi
 
 The deterministic server-side chunker normalizes line endings, preserves source order, uses a bounded character segmentation strategy, limits chunks to 4,000 characters each and 64 chunks per source, and computes SHA-256 content hashes. Stable chunk IDs are derived from owner, source identity, chunk index, and content hash. Reindexing replaces only the exact owner/source rows inside a database transaction, so ordinary retries do not accumulate duplicate chunks.
 
-The trusted semantic service calls `resolveCapability("EMBEDDING")`, validates returned dimensions and finite numeric vectors, and persists only after embedding generation succeeds. Retrieval generates a query embedding through the same capability, compares only rows with matching model, dimensions, and cosine metric, and returns a reduced server-side DTO with cosine similarity scores in descending order. Owner filtering is enforced in database queries and again before scoring. There is no browser-facing semantic-search procedure, no vector response to the client, and no automatic prompt assembly. Retrieved content remains untrusted data and cannot change system instructions, permissions, tools, persona, or security policy.
+The trusted semantic service calls `resolveCapability("EMBEDDING")`, validates returned dimensions and finite numeric vectors, and persists only after embedding generation succeeds. For `conversation_message`, it loads the canonical message through an owner-joined `messages`/`conversations` query; the caller supplies only the owner and stable source ID, not replacement content. The semantic row owner and source ID must match the canonical message owner and ID. Retrieval repeats the canonical owner join and compares the stored chunk hash with the current canonical message chunk hash, so stale rows are excluded rather than returned as current content.
 
-**Embedding generation is implemented. Vector storage and a trusted server-side semantic retrieval contract are implemented as infrastructure. RAG orchestration, automatic long-term memory, memory policy, and browser-facing semantic search remain unimplemented.**
+Reindexing is failure-preserving: canonical content is loaded and embedded before the exact owner/source replacement transaction begins. A provider or validation failure therefore leaves the previous semantic rows intact. The current repository has no browser message deletion or editing procedure, so no new browser lifecycle was invented. `deleteSemanticSource` is an internal owner-scoped cleanup primitive prepared for a future canonical message deletion lifecycle.
+
+Retrieval generates a query embedding through the same capability, compares only rows with matching model, dimensions, and cosine metric, and returns a reduced server-side DTO with cosine similarity scores in descending order. Owner filtering is enforced in database queries and again before scoring. There is no browser-facing semantic-search procedure, no vector response to the client, and no automatic prompt assembly. Retrieved content remains untrusted data and cannot change system instructions, permissions, tools, persona, or security policy.
+
+**The semantic index is a rebuildable derived representation of trusted canonical sources. It is not the source of truth and is not yet a long-term memory system.** Automatic conversation ingestion, memory formation, retention policy, and RAG prompt assembly remain unimplemented.
 
 ## Authentication flow
 
@@ -221,6 +225,10 @@ The test suite covers:
 - Owner-scoped semantic ingestion, atomic owner/source replacement, and idempotent chunk identities.
 - Cross-user retrieval isolation, bounded top-K, cosine score ordering, and model/dimension matching.
 - Semantic provider reuse, dimension validation, database-unavailable safety, and owner-scoped deletion.
+- Canonical conversation-message existence, owner, and content validation before indexing.
+- Caller-supplied replacement content cannot masquerade as canonical message content.
+- Canonical owner/source joins, stale content-hash rejection, and incompatible stored-vector rejection.
+- Failed reindex preservation, repeated reindex replacement, and cross-user source/deletion rejection.
 - No public semantic-search procedure, raw provider persistence, vector logging, or automatic prompt assembly.
 
 ## Validation evidence
@@ -231,7 +239,7 @@ Validation is run from the real repository using the package scripts:
 | ------------------ | ------------------------------------------------------------------- |
 | `pnpm format`      | Passed; unrelated formatter churn was reverted after inspection.    |
 | `pnpm check`       | Passed.                                                             |
-| `pnpm test`        | Passed: 14 test files, 67 tests.                                    |
+| `pnpm test`        | Passed: 14 test files, 68 tests.                                    |
 | `pnpm build`       | Passed; Vite emitted the existing non-blocking large-chunk warning. |
 | `git diff --check` | Passed.                                                             |
 

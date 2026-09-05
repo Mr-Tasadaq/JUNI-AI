@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   deleteSemanticChunksForOwnerSource: vi.fn(),
+  getCanonicalConversationMessageForSemantic: vi.fn(),
   listSemanticChunksForOwner: vi.fn(),
   replaceSemanticChunksForOwnerSource: vi.fn(),
   invokeEmbedding: vi.fn(),
@@ -9,6 +10,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("./db", () => ({
   deleteSemanticChunksForOwnerSource: mocks.deleteSemanticChunksForOwnerSource,
+  getCanonicalConversationMessageForSemantic:
+    mocks.getCanonicalConversationMessageForSemantic,
   listSemanticChunksForOwner: mocks.listSemanticChunksForOwner,
   replaceSemanticChunksForOwnerSource:
     mocks.replaceSemanticChunksForOwnerSource,
@@ -49,6 +52,11 @@ describe("semantic index foundation", () => {
     vi.clearAllMocks();
     mocks.replaceSemanticChunksForOwnerSource.mockResolvedValue(undefined);
     mocks.deleteSemanticChunksForOwnerSource.mockResolvedValue(undefined);
+    mocks.getCanonicalConversationMessageForSemantic.mockResolvedValue({
+      id: "message-1",
+      ownerId: 7,
+      content: "private source text",
+    });
     mocks.invokeEmbedding.mockResolvedValue({
       model: "text-embedding-3-small",
       vectors: [[1, 0]],
@@ -125,7 +133,6 @@ describe("semantic index foundation", () => {
       ownerId: 7,
       sourceType: "conversation_message",
       sourceId: "message-1",
-      content: "private source text",
     });
 
     expect(result).toMatchObject({
@@ -164,18 +171,59 @@ describe("semantic index foundation", () => {
         ownerId: 0,
         sourceType: "conversation_message",
         sourceId: "message-1",
-        content: "text",
       })
     ).rejects.toThrow("authenticated owner");
+    mocks.getCanonicalConversationMessageForSemantic.mockResolvedValueOnce(
+      undefined
+    );
+    await expect(
+      ingestSemanticSource({
+        ownerId: 7,
+        sourceType: "conversation_message",
+        sourceId: "missing-message",
+      })
+    ).rejects.toThrow("Semantic source not found");
+    mocks.getCanonicalConversationMessageForSemantic.mockResolvedValueOnce({
+      id: "message-1",
+      ownerId: 8,
+      content: "another user's content",
+    });
     await expect(
       ingestSemanticSource({
         ownerId: 7,
         sourceType: "conversation_message",
         sourceId: "message-1",
-        content: "   ",
+      })
+    ).rejects.toThrow("Semantic source not found");
+    mocks.getCanonicalConversationMessageForSemantic.mockResolvedValueOnce({
+      id: "message-1",
+      ownerId: 7,
+      content: "   ",
+    });
+    await expect(
+      ingestSemanticSource({
+        ownerId: 7,
+        sourceType: "conversation_message",
+        sourceId: "message-1",
       })
     ).rejects.toThrow("outside the supported limits");
     expect(mocks.invokeEmbedding).not.toHaveBeenCalled();
+  });
+
+  it("uses canonical content even when an untyped caller supplies replacement text", async () => {
+    await ingestSemanticSource({
+      ownerId: 7,
+      sourceType: "conversation_message",
+      sourceId: "message-1",
+      ...({ content: "attacker-controlled replacement" } as Record<
+        string,
+        string
+      >),
+    } as unknown as Parameters<typeof ingestSemanticSource>[0]);
+
+    expect(mocks.invokeEmbedding).toHaveBeenCalledWith(
+      expect.objectContaining({ input: ["private source text"] })
+    );
   });
 
   it("rejects inconsistent provider dimensions before persistence", async () => {
@@ -191,7 +239,6 @@ describe("semantic index foundation", () => {
         ownerId: 7,
         sourceType: "conversation_message",
         sourceId: "message-1",
-        content: "private text",
       })
     ).rejects.toMatchObject({ category: "invalid_request" });
     expect(mocks.replaceSemanticChunksForOwnerSource).not.toHaveBeenCalled();
@@ -207,7 +254,6 @@ describe("semantic index foundation", () => {
         ownerId: 7,
         sourceType: "conversation_message",
         sourceId: "message-1",
-        content: "private source text",
       })
     ).rejects.toThrow("Database unavailable");
   });
@@ -227,13 +273,14 @@ describe("semantic index foundation", () => {
         sourceId: "message-1",
         chunkIndex: 0,
         content: "best private match",
-        contentHash: "hash",
+        contentHash: hashSemanticContent("best private match"),
         embedding: [1, 0],
         embeddingModel: "text-embedding-3-small",
         embeddingDimensions: 2,
         distanceMetric: "cosine",
         createdAt: new Date(),
         updatedAt: new Date(),
+        canonicalContent: "best private match",
       },
       {
         id: "other-owner",
@@ -242,13 +289,14 @@ describe("semantic index foundation", () => {
         sourceId: "message-2",
         chunkIndex: 0,
         content: "must not leak",
-        contentHash: "hash",
+        contentHash: hashSemanticContent("must not leak"),
         embedding: [1, 0],
         embeddingModel: "text-embedding-3-small",
         embeddingDimensions: 2,
         distanceMetric: "cosine",
         createdAt: new Date(),
         updatedAt: new Date(),
+        canonicalContent: "must not leak",
       },
       {
         id: "orthogonal",
@@ -257,13 +305,14 @@ describe("semantic index foundation", () => {
         sourceId: "message-3",
         chunkIndex: 0,
         content: "weaker match",
-        contentHash: "hash",
+        contentHash: hashSemanticContent("weaker match"),
         embedding: [0, 1],
         embeddingModel: "text-embedding-3-small",
         embeddingDimensions: 2,
         distanceMetric: "cosine",
         createdAt: new Date(),
         updatedAt: new Date(),
+        canonicalContent: "weaker match",
       },
     ]);
 
@@ -302,13 +351,14 @@ describe("semantic index foundation", () => {
         sourceId: "message-1",
         chunkIndex: 0,
         content: "private content",
-        contentHash: "hash",
+        contentHash: hashSemanticContent("private content"),
         embedding: [1, 0, 0],
         embeddingModel: "text-embedding-3-small",
         embeddingDimensions: 3,
         distanceMetric: "cosine",
         createdAt: new Date(),
         updatedAt: new Date(),
+        canonicalContent: "private content",
       },
     ]);
     await expect(

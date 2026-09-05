@@ -443,7 +443,42 @@ export type SemanticChunkWrite = {
   updatedAt: Date;
 };
 
-export type SemanticChunkRow = SemanticChunkWrite;
+export type SemanticChunkRow = SemanticChunkWrite & {
+  canonicalContent?: string;
+};
+
+export type CanonicalSemanticSource = {
+  id: string;
+  ownerId: number;
+  content: string;
+};
+
+export async function getCanonicalConversationMessageForSemantic(
+  ownerId: number,
+  messageId: string
+): Promise<CanonicalSemanticSource | undefined> {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+
+  const rows = await db
+    .select({
+      id: messages.id,
+      ownerId: messages.ownerId,
+      content: messages.content,
+    })
+    .from(messages)
+    .innerJoin(
+      conversations,
+      and(
+        eq(conversations.id, messages.conversationId),
+        eq(conversations.ownerId, messages.ownerId)
+      )
+    )
+    .where(and(eq(messages.id, messageId), eq(messages.ownerId, ownerId)))
+    .limit(1);
+
+  return rows[0];
+}
 
 export async function replaceSemanticChunksForOwnerSource(
   ownerId: number,
@@ -451,6 +486,16 @@ export async function replaceSemanticChunksForOwnerSource(
   sourceId: string,
   rows: readonly SemanticChunkWrite[]
 ): Promise<void> {
+  if (
+    rows.some(
+      row =>
+        row.ownerId !== ownerId ||
+        row.sourceType !== sourceType ||
+        row.sourceId !== sourceId
+    )
+  ) {
+    throw new Error("Semantic replacement source identity mismatch");
+  }
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
 
@@ -494,8 +539,25 @@ export async function listSemanticChunksForOwner(
   if (!db) throw new Error("Database unavailable");
 
   const rows = await db
-    .select()
+    .select({
+      semantic: semanticChunks,
+      canonicalContent: messages.content,
+    })
     .from(semanticChunks)
+    .innerJoin(
+      messages,
+      and(
+        eq(messages.id, semanticChunks.sourceId),
+        eq(messages.ownerId, semanticChunks.ownerId)
+      )
+    )
+    .innerJoin(
+      conversations,
+      and(
+        eq(conversations.id, messages.conversationId),
+        eq(conversations.ownerId, messages.ownerId)
+      )
+    )
     .where(
       sourceType
         ? and(
@@ -507,8 +569,11 @@ export async function listSemanticChunksForOwner(
     .orderBy(asc(semanticChunks.createdAt), asc(semanticChunks.id));
 
   return rows.map(row => ({
-    ...row,
-    embedding: Array.isArray(row.embedding) ? (row.embedding as number[]) : [],
+    ...row.semantic,
+    canonicalContent: row.canonicalContent,
+    embedding: Array.isArray(row.semantic.embedding)
+      ? (row.semantic.embedding as number[])
+      : [],
   }));
 }
 
