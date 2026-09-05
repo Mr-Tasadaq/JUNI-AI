@@ -18,6 +18,10 @@ import {
 
 const allowed = [
   ["Read & edit code", "Source files, tests, docs, and configuration"],
+  [
+    "Create & delete files",
+    "Within an approved code change; destructive operations still require approval",
+  ],
   ["Create branches", "Work in isolated branches when appropriate"],
   ["Run validation", "Formatter, typecheck, tests, and production build"],
   ["Commit & push", "Focused commits with clear evidence"],
@@ -121,7 +125,7 @@ export default function ControlCenter() {
           <StatusBadge>policy active</StatusBadge>
         </div>
 
-        <div className="mt-14 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-14 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <div className="rounded-2xl border border-[#8fffc0]/20 bg-[#8fffc0]/[0.06] p-5">
             <Github className="h-5 w-5 text-[#8fffc0]" />
             <div className="mt-7 font-mono text-[10px] uppercase tracking-[0.14em] text-white/35">
@@ -152,6 +156,15 @@ export default function ControlCenter() {
             </div>
             <div className="mt-1 font-display text-xl font-semibold">
               fc92381
+            </div>
+          </div>
+          <div className="rounded-2xl border border-white/[0.09] bg-white/[0.03] p-5">
+            <LockKeyhole className="h-5 w-5 text-[#8fffc0]" />
+            <div className="mt-7 font-mono text-[10px] uppercase tracking-[0.14em] text-white/35">
+              Repository scope
+            </div>
+            <div className="mt-1 font-display text-xl font-semibold">
+              ONLY JUNI
             </div>
           </div>
         </div>

@@ -4,6 +4,10 @@
 
 This repository permits full development work through the authenticated GitHub account: read and edit source files, create files and branches, run tests and builds, commit changes, push branches, and create or update pull requests and issues when requested.
 
+## JUNI AI repository control profile
+
+Repository access is enabled for this repository only. Code reading, code editing, file creation, normal file deletion within an approved code change, branch operations, commit operations, pull request workflow, testing/build execution, Git operations, and pushes to this repository are enabled. Destructive operations require explicit approval. Secrets and credentials must never be exposed. Production deployment requires explicit approval.
+
 ## Required workflow
 
 1. Inspect the repository and existing implementation before changing files.
