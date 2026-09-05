@@ -10,6 +10,7 @@ import {
 import { z } from "zod";
 import { COOKIE_NAME } from "@shared/const";
 import type { UserId } from "@shared/types";
+import * as db from "./db";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { ENV } from "./_core/env";
 import { systemRouter } from "./_core/systemRouter";
@@ -39,6 +40,7 @@ const dataUrlSchema = z
     /^data:[^;]+;base64,[A-Za-z0-9+/=]+$/,
     "File must be a base64 data URL"
   );
+const adminRoleSchema = z.enum(["user", "admin"]);
 
 function safetyIdentifier(openId: string) {
   return createHash("sha256").update(openId).digest("hex");
@@ -247,6 +249,64 @@ export const appRouter = router({
         auditLog: "not_implemented" as const,
       },
     })),
+    users: adminProcedure.query(async ({ ctx }) => {
+      try {
+        return await db.listUsersForAdmin();
+      } catch (error) {
+        console.error("[Admin] User list failed", {
+          actorUserId: ctx.user.id,
+        });
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Administrative user data is temporarily unavailable.",
+        });
+      }
+    }),
+    changeUserRole: adminProcedure
+      .input(
+        z.object({
+          userId: z.number().int().positive(),
+          role: adminRoleSchema,
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        if (input.userId === ctx.user.id) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Administrators cannot change their own role.",
+          });
+        }
+
+        try {
+          const updatedUser = await db.changeUserRoleForAdmin(
+            input.userId,
+            input.role
+          );
+          if (!updatedUser) {
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "User not found.",
+            });
+          }
+
+          console.info("[Admin] User role changed", {
+            actorUserId: ctx.user.id,
+            targetUserId: input.userId,
+            role: input.role,
+          });
+          return updatedUser;
+        } catch (error) {
+          if (error instanceof TRPCError) throw error;
+          console.error("[Admin] User role change failed", {
+            actorUserId: ctx.user.id,
+            targetUserId: input.userId,
+          });
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Administrative user data is temporarily unavailable.",
+          });
+        }
+      }),
   }),
 });
 

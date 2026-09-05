@@ -1,7 +1,7 @@
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
-import { ENV } from './_core/env';
+import { InsertUser, User, users } from "../drizzle/schema";
+import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -56,8 +56,8 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       values.role = user.role;
       updateSet.role = user.role;
     } else if (user.openId === ENV.ownerOpenId) {
-      values.role = 'admin';
-      updateSet.role = 'admin';
+      values.role = "admin";
+      updateSet.role = "admin";
     }
 
     if (!values.lastSignedIn) {
@@ -84,9 +84,53 @@ export async function getUserByOpenId(openId: string) {
     return undefined;
   }
 
-  const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+  const result = await db
+    .select()
+    .from(users)
+    .where(eq(users.openId, openId))
+    .limit(1);
 
   return result.length > 0 ? result[0] : undefined;
+}
+
+export type AdminUserSummary = Pick<
+  User,
+  "id" | "name" | "email" | "role" | "createdAt" | "updatedAt" | "lastSignedIn"
+>;
+
+const adminUserColumns = {
+  id: users.id,
+  name: users.name,
+  email: users.email,
+  role: users.role,
+  createdAt: users.createdAt,
+  updatedAt: users.updatedAt,
+  lastSignedIn: users.lastSignedIn,
+};
+
+export async function listUsersForAdmin(): Promise<AdminUserSummary[]> {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+
+  return db.select(adminUserColumns).from(users).orderBy(desc(users.createdAt));
+}
+
+export async function changeUserRoleForAdmin(
+  userId: number,
+  role: User["role"]
+): Promise<AdminUserSummary | undefined> {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+
+  const existing = await db
+    .select(adminUserColumns)
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  if (!existing[0]) return undefined;
+
+  await db.update(users).set({ role }).where(eq(users.id, userId));
+  return { ...existing[0], role };
 }
 
 // TODO: add feature queries here as your schema grows.

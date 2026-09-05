@@ -2,9 +2,9 @@
 
 ## Current status
 
-**Status: PARTIAL.** JUNI AI now has two separated application experiences inside one shared platform: an authenticated user panel at `/` and a server-authorized admin control center at `/admin`. The existing Manus OAuth/session foundation, OpenAI Realtime WebRTC flow, server-side provider boundary, and canonical JUNI/SONA persona contract remain intact.
+**Status: PARTIAL.** JUNI AI now has two separated application experiences inside one shared platform: an authenticated user panel at `/` and a server-authorized admin control center at `/admin`. The existing Manus OAuth/session foundation, OpenAI Realtime WebRTC flow, server-side provider boundary, and canonical JUNI/SONA persona contract remain intact. The first safe administration layer is **COMPLETE**: server-authorized user listing, safe user detail display, and confirmed role changes are implemented.
 
-The admin slice currently provides operational health, provider/model status, voice/persona inventory, and truthful capability limits. Full user CRUD, role mutations, memory administration, durable audit events, storage quota controls, feature flags, and maintenance mutations remain deferred because the active repository does not yet have those domain tables or service contracts.
+The admin slice provides operational health, provider/model status, voice/persona inventory, truthful capability limits, and a user-management section. Destructive user deletion, account enable/disable, billing mutations, memory administration, durable audit events, storage quota controls, feature flags, and maintenance mutations remain deferred because the active repository does not yet have safe status/audit contracts for them.
 
 ## Shared platform boundaries
 
@@ -53,25 +53,29 @@ The administrative experience is `/admin`, implemented by `client/src/pages/Admi
 - SONA AI and JUNI AI voice/persona inventory.
 - Voice, protected file analysis, billing-preview, memory, and audit capability states.
 - Explicit safe-boundary messaging for deferred administrative features.
+- User ID, name, email, role, created date, and last activity from the existing `users` model.
+- Searchable user list with role badges and a confirmation dialog for role changes.
 
 The route is not secured by hiding a link. The `admin.dashboard` tRPC procedure uses `adminProcedure`, which requires an authenticated `ctx.user` and the server-derived `role === "admin"`. A normal user receives `FORBIDDEN` even if they navigate directly to `/admin`, change URL state, or forge client input. The frontend role check only controls presentation and query enablement; it is not the authorization boundary.
 
-The existing database role values are lowercase `user` and `admin`; these are the repository’s persisted equivalents of the product-level **USER** and **ADMIN** roles. No competing role system or schema migration was introduced. The existing owner-openId bootstrap behavior remains the source of the initial administrator assignment.
+The existing database role values are lowercase `user` and `admin`; these are the repository’s persisted equivalents of the product-level **USER** and **ADMIN** roles. No competing role system or schema migration was introduced. The existing owner-openId bootstrap behavior remains the source of the initial administrator assignment. The schema has no account-status field, so enable/disable controls are **NOT IMPLEMENTED** rather than simulated in the UI.
 
 ## Authorization model
 
 `protectedProcedure` rejects unauthenticated requests. `adminProcedure` rejects unauthenticated requests and authenticated users whose server-derived role is not `admin`. Current protected procedures are:
 
-| Procedure or route            | Authorization and ownership                                                                                         |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `realtime.createClientSecret` | Authenticated user only; safety identifier is derived from `ctx.user.openId`; persona and language are allowlisted. |
-| `files.analyze`               | Authenticated user only; analysis is ephemeral and provider credentials remain server-side.                         |
-| `account.dashboard`           | Authenticated user only; response identity is derived from `ctx.user.id`.                                           |
-| `account.getRechargeInfo`     | Authenticated user only; owner ID is server-derived.                                                                |
-| `account.startRecharge`       | Authenticated user only; amount is validated and owner ID is server-derived. It remains preview-only.               |
-| `admin.dashboard`             | Admin only; returns operational data only after server role verification.                                           |
-| `system.notifyOwner`          | Existing admin-only procedure.                                                                                      |
-| `GET /manus-storage/*`        | Authenticated and restricted to `users/{ctx.user.id}/` storage keys.                                                |
+| Procedure or route            | Authorization and ownership                                                                                                                                                       |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `realtime.createClientSecret` | Authenticated user only; safety identifier is derived from `ctx.user.openId`; persona and language are allowlisted.                                                               |
+| `files.analyze`               | Authenticated user only; analysis is ephemeral and provider credentials remain server-side.                                                                                       |
+| `account.dashboard`           | Authenticated user only; response identity is derived from `ctx.user.id`.                                                                                                         |
+| `account.getRechargeInfo`     | Authenticated user only; owner ID is server-derived.                                                                                                                              |
+| `account.startRecharge`       | Authenticated user only; amount is validated and owner ID is server-derived. It remains preview-only.                                                                             |
+| `admin.dashboard`             | Admin only; returns operational data only after server role verification.                                                                                                         |
+| `admin.users`                 | Admin only; returns a deliberately reduced user summary without `openId`, login method, credentials, or provider secrets.                                                         |
+| `admin.changeUserRole`        | Admin only; validates target ID and role, prevents self-demotion, updates the existing `users.role` column, and logs actor/target/role metadata to the server operational stream. |
+| `system.notifyOwner`          | Existing admin-only procedure.                                                                                                                                                    |
+| `GET /manus-storage/*`        | Authenticated and restricted to `users/{ctx.user.id}/` storage keys.                                                                                                              |
 
 A client-supplied owner ID cannot override `ctx.user.id`. Cross-user storage paths return a generic 404. Future conversations, messages, memory, projects, tasks, file metadata, and administrative mutations must add owner-scoped queries, input schemas, authorization checks, and cross-user tests before being exposed.
 
@@ -91,7 +95,7 @@ The authentication hardening work addressed the following findings:
 
 The short-lived Realtime client secret is intentionally delivered to an authenticated browser because WebRTC requires it. The long-lived `OPENAI_API_KEY`, Forge credentials, database credentials, and admin secrets remain server-only. No credentials are placed in URLs, query parameters, client storage, source code, screenshots, or rendered provider errors.
 
-Administrative mutations are intentionally limited in this slice. Since no durable audit-event table exists, the admin dashboard does not claim to provide an audit log. Consequential admin mutations must not be added without an auditable server-side operation contract.
+Administrative mutations are intentionally limited in this slice. Since no durable audit-event table exists, role changes currently emit structured server operational logging but do not claim to provide a persistent audit log. Persistent administrative audit storage is the next security milestone. Consequential mutations beyond role changes must not be added without an auditable server-side operation contract.
 
 ## Tests added and maintained
 
@@ -100,6 +104,11 @@ The test suite covers:
 - Unauthenticated rejection of current protected procedures.
 - Normal-user denial of `admin.dashboard`.
 - Admin access to `admin.dashboard`.
+- Unauthenticated denial of `admin.users` and `admin.changeUserRole`.
+- Normal-user denial of user listing and role changes even when the frontend requests them.
+- Admin access to reduced user details without provider credentials.
+- Admin role change for another user.
+- Self-role-change prevention for administrators.
 - Client identity cannot override server identity.
 - Cross-user and unauthenticated storage-key denial.
 - Generic provider errors without configuration leakage.
@@ -114,16 +123,16 @@ Validation is run from the real repository using the package scripts:
 | --------------------- | ------------------------------------------------------------------- |
 | Scoped Prettier check | Passed for changed source, tests, and documentation.                |
 | `pnpm check`          | TypeScript validation passed.                                       |
-| `pnpm test`           | Passed: 5 test files, 17 tests.                                     |
+| `pnpm test`           | Passed: 6 test files, 22 tests.                                     |
 | `pnpm build`          | Passed; Vite emitted the existing non-blocking large-chunk warning. |
 | `git diff --check`    | Passed.                                                             |
 
-No database migration was created. The existing users role column already supports the required USER/ADMIN model, and the new admin dashboard is read-only.
+No database migration was created. The existing `users.role` column already supports the required USER/ADMIN model, and the new user-management procedures reuse it. No account-status field or audit-event table exists in the active schema.
 
 ## Known limitations and next slices
 
 The current JWT remains stateless with the existing one-year lifetime; logout cannot revoke a copied token before expiration. A future production hardening slice should add token rotation and revocation or shorten the lifetime after the deployment threat model is confirmed.
 
-The admin panel is intentionally an operational foundation rather than a claim of full administrative CRUD. User management, role changes, account status controls, provider configuration mutations, model availability controls, voice configuration persistence, memory/knowledge management, storage quotas, research/tool policies, feature flags, maintenance actions, diagnostics, and audit events require real domain contracts and should be implemented one auditable server procedure at a time.
+The admin panel is intentionally an operational foundation rather than a claim of full administrative CRUD. Account status controls, provider configuration mutations, model availability controls, voice configuration persistence, memory/knowledge management, storage quotas, research/tool policies, feature flags, maintenance actions, diagnostics, and persistent audit events require real domain contracts and should be implemented one auditable server procedure at a time.
 
 The user panel still uses local browser history and the file-analysis path remains ephemeral. Durable conversation, message, memory, project, task, and file metadata ownership will require controlled schema migrations and owner-scoped service methods before those features are enabled.
