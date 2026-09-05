@@ -5,6 +5,7 @@ import Audit from "@/pages/Audit";
 import Journal from "@/pages/Journal";
 import ControlCenter from "@/pages/ControlCenter";
 import AdminPanel from "@/pages/AdminPanel";
+import Architecture from "@/pages/Architecture";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
@@ -18,6 +19,7 @@ function Router() {
       <Route path={"/admin"} component={AdminPanel} />
       <Route path={"/journal"} component={Journal} />
       <Route path={"/control-center"} component={ControlCenter} />
+      <Route path={"/architecture"} component={Architecture} />
       <Route path={"/audit"} component={Audit} />
       <Route path={"/404"} component={NotFound} />
       {/* Final fallback route */}

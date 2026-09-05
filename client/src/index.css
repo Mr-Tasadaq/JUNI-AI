@@ -68,6 +68,28 @@ a:focus-visible {
   mask-image: linear-gradient(to bottom, black, transparent 82%);
 }
 
+.architecture-grid {
+  background-image:
+    radial-gradient(
+      circle at 15% 12%,
+      rgba(143, 255, 192, 0.08),
+      transparent 26%
+    ),
+    radial-gradient(
+      circle at 88% 8%,
+      rgba(132, 112, 255, 0.07),
+      transparent 24%
+    ),
+    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size:
+    auto,
+    auto,
+    56px 56px,
+    56px 56px;
+  mask-image: linear-gradient(to bottom, black, transparent 88%);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
