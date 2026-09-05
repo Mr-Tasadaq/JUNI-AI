@@ -27,7 +27,7 @@ The normal text orchestration path is provider-neutral at the JUNI boundary:
 Application / orchestrator → JUNI capability contract → provider adapter → external provider
 ```
 
-`server/capabilities.ts` owns the capability vocabulary, adapter contract, deterministic resolution, safe provider-health metadata, and normalized provider errors. `server/orchestration.ts` requests a capability and uses the selected adapter; it does not call a vendor transport directly. `SMART_GENERAL` wraps the existing server-only `invokeLLM` implementation. `VISION` uses the server-only `invokeVision` transport in `server/_core/llm.ts`, keeping Responses API request construction outside routers and reusing the existing retry/error boundary.
+`server/capabilities.ts` owns the capability vocabulary, adapter contract, deterministic resolution, safe provider-health metadata, and normalized provider errors. `server/orchestration.ts` requests a capability and uses the selected adapter; it does not call a vendor transport directly. `SMART_GENERAL` wraps the existing server-only `invokeLLM` implementation. `VISION` uses the server-only `invokeVision` transport in `server/_core/llm.ts`, while `EMBEDDING` uses `invokeEmbeddings`; both keep provider request construction outside routers and reuse the existing retry/error boundary.
 
 The capability registry is intentionally truthful:
 
@@ -37,7 +37,7 @@ The capability registry is intentionally truthful:
 | `FAST_GENERAL`   | **NOT IMPLEMENTED**                                             | No adapter                                            |
 | `VISION`         | **IMPLEMENTED** when the server OpenAI configuration is present | OpenAI Responses `input_image` / `input_file` adapter |
 | `VIDEO`          | **NOT IMPLEMENTED**                                             | No video provider pipeline                            |
-| `EMBEDDING`      | **NOT IMPLEMENTED**                                             | No embedding provider                                 |
+| `EMBEDDING`      | **IMPLEMENTED** when the server OpenAI configuration is present | OpenAI `/v1/embeddings`, `text-embedding-3-small`     |
 | `RESEARCH`       | **NOT IMPLEMENTED**                                             | No research tool layer                                |
 | `CODE`           | **NOT IMPLEMENTED**                                             | No code capability adapter                            |
 | `VOICE_REALTIME` | **PARTIAL / SEPARATE PATH**                                     | OpenAI Realtime WebRTC flow, not the text adapter     |
@@ -51,6 +51,14 @@ The existing untrusted-context envelope remains part of orchestration. Retrieved
 `files.analyze` is an authenticated, ephemeral multimodal analysis endpoint. The router validates the upload, resolves `VISION`, and passes a JUNI-owned request to the provider adapter. The adapter translates that request to the OpenAI Responses API: images use `input_image` with a bounded Base64 data URL and `detail: auto`; PDFs and plain text use `input_file` with filename and Base64 data URL, with PDF detail set to `auto`. Only safe filename, MIME type, analysis text, capability, and provider identifiers return to the client. Raw provider responses, headers, API credentials, and request payloads do not.
 
 Supported inputs are PNG, JPEG, WEBP, non-animated GIF, PDF, and plain text. The request accepts only a Base64 data URL whose declared MIME matches the validated MIME input, with a maximum data URL length of 12,000,000 characters. The client additionally rejects files above 8 MiB. The server does not trust filename extensions and does not accept remote URLs. Uploaded binaries are not stored in the database, messages, conversation metadata, logs, or audit events. The current file-analysis result remains ephemeral and is shown as a local compatibility note in the voice-first UI; it is not a knowledge base, RAG system, or long-term memory. The provider request shape follows the official [OpenAI image input](https://developers.openai.com/api/docs/guides/images-vision) and [file input](https://developers.openai.com/api/docs/guides/file-inputs) documentation.
+
+### EMBEDDING foundation
+
+`EMBEDDING` is an internal server capability only. Trusted server code supplies either one non-empty text string or a bounded array of strings to the JUNI adapter. The adapter allows at most 32 inputs, 24,000 characters per input, and 256,000 aggregate characters. The client has no generic embedding procedure and cannot select the model, dimensions, encoding, or provider identity.
+
+The current provider is OpenAI’s `/v1/embeddings` endpoint using the server-owned `OPENAI_EMBEDDING_MODEL` value, defaulting to `text-embedding-3-small`. Requests explicitly use `encoding_format: float` and pass a hashed server-derived user identifier when available. The normalized result contains only the configured/provider-returned model name, `number[][]` vectors, vector dimensions, input count, and safe token usage metadata. The default vector dimension is 1536 for `text-embedding-3-small`; no vectors are rounded, truncated, logged, placed in client storage, or persisted in the current database.
+
+**Embedding generation is implemented; vector storage, semantic search, RAG, and long-term memory are not yet implemented.** No vector database, similarity function, chunking pipeline, retrieval API, or memory table was introduced. The request and result contracts remain provider-neutral so a future trusted memory or research service can consume them without exposing a browser-facing embedding endpoint. The request contract follows the official [OpenAI embeddings guide](https://developers.openai.com/api/docs/guides/embeddings) and [Create embeddings reference](https://developers.openai.com/api/reference/resources/embeddings/methods/create/).
 
 ## Authentication flow
 
@@ -86,7 +94,7 @@ The administrative experience is `/admin`, implemented by `client/src/pages/Admi
 - Database configuration status without returning database credentials.
 - OpenAI Realtime model, transport, and provider-configured status.
 - SONA AI and JUNI AI voice/persona inventory.
-- Voice, protected file analysis, billing-preview, memory, and audit capability states.
+- Voice, protected file analysis, embedding generation, billing-preview, memory, and audit capability states.
 - Explicit safe-boundary messaging for deferred administrative features.
 - User ID, name, email, role, created date, and last activity from the existing `users` model.
 - Searchable user list with role badges and a confirmation dialog for role changes.
@@ -192,6 +200,11 @@ The test suite covers:
 - Server-derived safety identifier and absence of provider credentials from returned errors.
 - Uploaded instructions remain explicitly untrusted data.
 - Responses transport mapping for `input_image` and `input_file` content.
+- EMBEDDING resolution through the configured capability adapter.
+- Single-string and bounded-batch embedding validation.
+- Server-controlled model, float vector normalization, dimensions, and usage metadata.
+- Unconfigured embedding behavior, normalized provider failures, and absence of submitted text in errors.
+- Server-derived provider user identity and absence of vectors or credentials from results.
 
 ## Validation evidence
 
@@ -201,7 +214,7 @@ Validation is run from the real repository using the package scripts:
 | ------------------ | ------------------------------------------------------------------- |
 | `pnpm format`      | Passed; unrelated formatter churn was reverted after inspection.    |
 | `pnpm check`       | Passed.                                                             |
-| `pnpm test`        | Passed: 12 test files, 51 tests.                                    |
+| `pnpm test`        | Passed: 13 test files, 57 tests.                                    |
 | `pnpm build`       | Passed; Vite emitted the existing non-blocking large-chunk warning. |
 | `git diff --check` | Passed.                                                             |
 
@@ -213,4 +226,4 @@ The current JWT remains stateless with the existing one-year lifetime; logout ca
 
 The admin panel is intentionally an operational foundation rather than a claim of full administrative CRUD. Account status controls, provider configuration mutations, model availability controls, voice configuration persistence, memory/knowledge management, storage quotas, research/tool policies, feature flags, maintenance actions, diagnostics, and administrative access to private conversations remain unavailable.
 
-The file-analysis path remains ephemeral multimodal analysis, not a complete document knowledge base, RAG system, or memory/learning system. It does not support video, embeddings, research, browser/computer use, arbitrary file storage, or provider configuration mutation. Existing pre-migration global `juni-history` data is intentionally not auto-imported; new temporary notes are namespaced by authenticated user ID to prevent cross-account leakage. A future explicit user-consented import can be designed separately.
+The file-analysis path remains ephemeral multimodal analysis, not a complete document knowledge base, RAG system, or memory/learning system. Embedding generation is implemented only as an internal service; vectors are not persisted and no semantic retrieval exists. The product still does not support video, research, browser/computer use, arbitrary file storage, or provider configuration mutation. Existing pre-migration global `juni-history` data is intentionally not auto-imported; new temporary notes are namespaced by authenticated user ID to prevent cross-account leakage. A future explicit user-consented import can be designed separately.

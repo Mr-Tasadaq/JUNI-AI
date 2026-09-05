@@ -366,6 +366,9 @@ export const appRouter = router({
       const visionStatus = getCapabilityStatus().find(
         item => item.capability === "VISION"
       );
+      const embeddingStatus = getCapabilityStatus().find(
+        item => item.capability === "EMBEDDING"
+      );
       return {
         viewer: {
           id: ctx.user.id,
@@ -391,6 +394,7 @@ export const appRouter = router({
         capabilities: {
           voice: "implemented" as const,
           fileAnalysis: visionStatus?.status ?? "unsupported",
+          embedding: embeddingStatus?.status ?? "unsupported",
           billing: "preview_only" as const,
           durableMemory: "not_implemented" as const,
           auditLog: "implemented" as const,

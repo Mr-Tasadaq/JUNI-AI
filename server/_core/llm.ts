@@ -124,6 +124,22 @@ export type VisionInvokeParams = {
   safetyIdentifier?: string;
 };
 
+export type EmbeddingInvokeParams = {
+  inputs: string[];
+  userIdentifier?: string;
+};
+
+export type EmbeddingInvokeResult = {
+  model: string;
+  vectors: number[][];
+  dimensions: number;
+  inputCount: number;
+  usage?: {
+    promptTokens: number;
+    totalTokens: number;
+  };
+};
+
 export type JsonSchema = {
   name: string;
   schema: Record<string, unknown>;
@@ -503,6 +519,86 @@ export async function invokeVision(
     throw new Error("Vision provider returned an empty response");
   }
   return body.output_text.trim();
+}
+
+export async function invokeEmbeddings(
+  params: EmbeddingInvokeParams
+): Promise<EmbeddingInvokeResult> {
+  if (!ENV.openAiApiKey) throw new Error("OPENAI_API_KEY is not configured");
+
+  const response = await fetchWithBackoff(
+    "https://api.openai.com/v1/embeddings",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${ENV.openAiApiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        input: params.inputs,
+        model: ENV.embeddingModel,
+        encoding_format: "float",
+        ...(params.userIdentifier ? { user: params.userIdentifier } : {}),
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new Error(
+      `Embedding provider request failed with status ${response.status}`
+    );
+  }
+
+  const body = (await response.json().catch(() => null)) as {
+    data?: Array<{ embedding?: unknown; index?: unknown }>;
+    model?: unknown;
+    usage?: { prompt_tokens?: unknown; total_tokens?: unknown };
+  } | null;
+  if (
+    !body ||
+    !Array.isArray(body.data) ||
+    body.data.length !== params.inputs.length
+  ) {
+    throw new Error("Embedding provider returned an invalid response");
+  }
+
+  const vectors = body.data.map(item => {
+    if (
+      !Array.isArray(item.embedding) ||
+      item.embedding.length === 0 ||
+      item.embedding.some(
+        value => typeof value !== "number" || !Number.isFinite(value)
+      )
+    ) {
+      throw new Error("Embedding provider returned an invalid vector");
+    }
+    return [...item.embedding] as number[];
+  });
+  const dimensions = vectors[0]?.length ?? 0;
+  if (
+    dimensions === 0 ||
+    vectors.some(vector => vector.length !== dimensions)
+  ) {
+    throw new Error(
+      "Embedding provider returned inconsistent vector dimensions"
+    );
+  }
+
+  const promptTokens = body.usage?.prompt_tokens;
+  const totalTokens = body.usage?.total_tokens;
+  return {
+    model:
+      typeof body.model === "string" && body.model.trim()
+        ? body.model
+        : ENV.embeddingModel,
+    vectors,
+    dimensions,
+    inputCount: vectors.length,
+    ...(typeof promptTokens === "number" && typeof totalTokens === "number"
+      ? { usage: { promptTokens, totalTokens } }
+      : {}),
+  };
 }
 
 export type ModelInfo = {

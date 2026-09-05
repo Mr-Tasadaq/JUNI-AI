@@ -1,7 +1,10 @@
 import { ENV } from "./_core/env";
 import {
   invokeLLM,
+  invokeEmbeddings,
   invokeVision,
+  type EmbeddingInvokeParams,
+  type EmbeddingInvokeResult,
   type InvokeParams,
   type InvokeResult,
   type VisionInvokeParams,
@@ -19,7 +22,17 @@ export const CAPABILITIES = [
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
-export type ImplementedCapability = "SMART_GENERAL" | "VISION";
+export type ImplementedCapability = "SMART_GENERAL" | "VISION" | "EMBEDDING";
+
+export type EmbeddingRequest = {
+  input: string | string[];
+  userIdentifier?: string;
+};
+export type EmbeddingResult = EmbeddingInvokeResult;
+
+export const EMBEDDING_MAX_INPUTS = 32;
+export const EMBEDDING_MAX_INPUT_CHARS = 24_000;
+export const EMBEDDING_MAX_TOTAL_CHARS = 256_000;
 
 export type ProviderHealthState =
   | "healthy"
@@ -66,6 +79,7 @@ export type ProviderAdapter = {
   getHealth(): ProviderHealth;
   invoke(params: InvokeParams): Promise<InvokeResult>;
   invokeVision?(params: VisionInvokeParams): Promise<string>;
+  invokeEmbedding?(params: EmbeddingRequest): Promise<EmbeddingResult>;
 };
 
 export type CapabilityResolution = {
@@ -203,10 +217,93 @@ export function createVisionAdapter(
   };
 }
 
+export function createEmbeddingAdapter(
+  embed: (
+    params: EmbeddingInvokeParams
+  ) => Promise<EmbeddingResult> = invokeEmbeddings,
+  configured: boolean = Boolean(ENV.openAiApiKey)
+): ProviderAdapter {
+  let lastErrorCategory: ProviderErrorCategory | undefined;
+  const providerId = "openai-embeddings";
+
+  return {
+    id: providerId,
+    capabilities: ["EMBEDDING"],
+    getHealth: () => ({
+      providerId,
+      enabled: configured,
+      capabilities: ["EMBEDDING"],
+      state: configured
+        ? lastErrorCategory
+          ? "unhealthy"
+          : "healthy"
+        : "unconfigured",
+      ...(lastErrorCategory ? { lastErrorCategory } : {}),
+    }),
+    async invoke() {
+      throw new JuniProviderError(
+        "unsupported_capability",
+        "This provider adapter only supports EMBEDDING requests.",
+        { providerId }
+      );
+    },
+    async invokeEmbedding(params) {
+      const inputs = Array.isArray(params.input)
+        ? params.input
+        : [params.input];
+      if (!configured) {
+        const error = new JuniProviderError(
+          "configuration",
+          "The requested AI service is temporarily unavailable.",
+          { providerId }
+        );
+        lastErrorCategory = error.category;
+        throw error;
+      }
+
+      if (
+        inputs.length < 1 ||
+        inputs.length > EMBEDDING_MAX_INPUTS ||
+        inputs.some(
+          input =>
+            input.trim().length === 0 ||
+            input.length > EMBEDDING_MAX_INPUT_CHARS
+        ) ||
+        inputs.reduce((total, input) => total + input.length, 0) >
+          EMBEDDING_MAX_TOTAL_CHARS
+      ) {
+        const error = new JuniProviderError(
+          "invalid_request",
+          "The embedding request is outside the supported input limits.",
+          { providerId }
+        );
+        lastErrorCategory = error.category;
+        throw error;
+      }
+
+      try {
+        const result = await embed({
+          inputs,
+          ...(params.userIdentifier
+            ? { userIdentifier: params.userIdentifier }
+            : {}),
+        });
+        lastErrorCategory = undefined;
+        return result;
+      } catch (error) {
+        const normalized = normalizeProviderError(error, providerId);
+        lastErrorCategory = normalized.category;
+        throw normalized;
+      }
+    },
+  };
+}
+
 export function createCapabilityRegistry(
   adapters: readonly ProviderAdapter[] = [
     createForgeLLMAdapter(),
     createVisionAdapter(),
+    createEmbeddingAdapter(),
   ]
 ): CapabilityRegistry {
   return { adapters };
@@ -294,6 +391,7 @@ export const capabilityHealth = getCapabilityStatus;
 export const IMPLEMENTED_CAPABILITIES: readonly ImplementedCapability[] = [
   "SMART_GENERAL",
   "VISION",
+  "EMBEDDING",
 ];
 
 export const SEPARATE_REALTIME_CAPABILITY: Capability = "VOICE_REALTIME";
@@ -304,7 +402,7 @@ export const capabilityContracts = {
   VISION: "implemented",
   VOICE_REALTIME: "separate-realtime-path",
   VIDEO: "unsupported",
-  EMBEDDING: "unsupported",
+  EMBEDDING: "implemented",
   RESEARCH: "unsupported",
   CODE: "unsupported",
 } as const satisfies Record<Capability, string>;
