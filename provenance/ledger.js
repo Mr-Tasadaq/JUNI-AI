@@ -92,7 +92,9 @@ export class TamperEvidentLedger {
 
     const previousHash = previous.rows[0]?.current_hash ?? GENESIS_HASH;
     const sequence = Number(previous.rows[0]?.sequence ?? 0) + 1;
-    const safePayload = payload && typeof payload === "object" ? structuredClone(payload) : { value: payload };
+    const safePayload = payload && typeof payload === "object"
+      ? structuredClone(payload)
+      : { value: payload };
     const payloadHash = hashObject(safePayload);
 
     const event = {
@@ -115,11 +117,26 @@ export class TamperEvidentLedger {
 
     const currentHash = hashString(canonicalJson(buildHashInput(event)));
     const ledgerSizeBytes = byteSize({ ...event, payload: safePayload, currentHash });
-    const auditBytes = byteSize({ eventId, eventType, objectId, actorType, actorId, occurredAt });
+    const auditBytes = byteSize({
+      eventId,
+      eventType,
+      objectId,
+      actorType,
+      actorId,
+      occurredAt,
+    });
 
     if (this.#quota) {
-      await this.#quota.assertWithinQuota(scope, ledgerSizeBytes, { category: "provenance", executor: tx });
-      await this.#quota.assertWithinQuota(scope, auditBytes, { category: "logs", executor: tx });
+      await this.#quota.assertWithinQuota(
+        scope,
+        ledgerSizeBytes,
+        { category: "provenance", executor: tx }
+      );
+      await this.#quota.assertWithinQuota(
+        scope,
+        auditBytes,
+        { category: "logs", executor: tx }
+      );
     }
 
     await tx.execute({
@@ -129,16 +146,31 @@ export class TamperEvidentLedger {
         payload_hash, previous_hash, current_hash, source_hash, provider, model, size_bytes
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
-        eventId, scope.tenantId, scope.userId, sequence, eventType, occurredAt,
-        actorType, actorId, objectId, objectVersion, canonicalJson(safePayload),
-        payloadHash, previousHash, currentHash, sourceHash, provider, model, ledgerSizeBytes,
+        eventId,
+        scope.tenantId,
+        scope.userId,
+        sequence,
+        eventType,
+        occurredAt,
+        actorType,
+        actorId,
+        objectId,
+        objectVersion,
+        canonicalJson(safePayload),
+        payloadHash,
+        previousHash,
+        currentHash,
+        sourceHash,
+        provider,
+        model,
+        ledgerSizeBytes,
       ],
     });
 
-    const auditBytes = byteSize({ eventId, eventType, objectId, actorType, actorId });
     await tx.execute({
       sql: `INSERT INTO audit_records (
-        event_id, tenant_id, user_id, event_type, object_id, actor_type, actor_id, summary, created_at, size_bytes
+        event_id, tenant_id, user_id, event_type, object_id, actor_type, actor_id,
+        summary, created_at, size_bytes
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         eventId,
@@ -178,13 +210,21 @@ export class TamperEvidentLedger {
     assertScope(scope);
     const boundedLimit = Math.max(1, Math.min(100, Number(limit) || 100));
     const sql = beforeSequence == null
-      ? `SELECT * FROM ledger_events WHERE tenant_id = ? AND user_id = ? ORDER BY sequence DESC LIMIT ?`
-      : `SELECT * FROM ledger_events WHERE tenant_id = ? AND user_id = ? AND sequence < ? ORDER BY sequence DESC LIMIT ?`;
+      ? `SELECT * FROM ledger_events
+         WHERE tenant_id = ? AND user_id = ?
+         ORDER BY sequence DESC LIMIT ?`
+      : `SELECT * FROM ledger_events
+         WHERE tenant_id = ? AND user_id = ? AND sequence < ?
+         ORDER BY sequence DESC LIMIT ?`;
     const args = beforeSequence == null
       ? [scope.tenantId, scope.userId, boundedLimit]
       : [scope.tenantId, scope.userId, beforeSequence, boundedLimit];
+
     const result = await this.#client.execute({ sql, args });
-    return result.rows.map((row) => ({ ...row, payload: fromJson(row.payload_json) }));
+    return result.rows.map((row) => ({
+      ...row,
+      payload: fromJson(row.payload_json),
+    }));
   }
 
   async get(scope, eventId) {
@@ -209,11 +249,20 @@ export class TamperEvidentLedger {
     let expectedSequence = 1;
 
     for (const row of result.rows) {
-      if (row.sequence !== expectedSequence) {
+      const actualSequence = Number(row.sequence);
+
+      if (actualSequence !== expectedSequence) {
         issues.push({
           type: "sequence_gap",
           expected: expectedSequence,
-          actual: row.sequence,
+          actual: actualSequence,
+          eventId: row.event_id,
+        });
+      }
+
+      if (!row.previous_hash) {
+        issues.push({
+          type: "missing_previous_hash",
           eventId: row.event_id,
         });
       }
@@ -227,7 +276,8 @@ export class TamperEvidentLedger {
         });
       }
 
-      const expectedPayloadHash = hashObject(fromJson(row.payload_json));
+      const payload = fromJson(row.payload_json);
+      const expectedPayloadHash = hashObject(payload);
       if (row.payload_hash !== expectedPayloadHash) {
         issues.push({
           type: "payload_hash_mismatch",
@@ -239,7 +289,7 @@ export class TamperEvidentLedger {
         eventId: row.event_id,
         tenantId: row.tenant_id,
         userId: row.user_id,
-        sequence: row.sequence,
+        sequence: actualSequence,
         eventType: row.event_type,
         occurredAt: row.occurred_at,
         actorType: row.actor_type,
@@ -253,12 +303,6 @@ export class TamperEvidentLedger {
         model: row.model,
       };
       const expectedCurrent = hashString(canonicalJson(rebuilt));
-      if (!row.previous_hash) {
-        issues.push({
-          type: "missing_previous_hash",
-          eventId: row.event_id,
-        });
-      }
 
       if (row.current_hash !== expectedCurrent) {
         issues.push({
@@ -268,7 +312,7 @@ export class TamperEvidentLedger {
       }
 
       expectedPrevious = row.current_hash;
-      expectedSequence = Number(row.sequence) + 1;
+      expectedSequence = actualSequence + 1;
     }
 
     return {
