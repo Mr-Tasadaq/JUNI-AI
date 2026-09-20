@@ -62,7 +62,7 @@ export class MemoryService {
       await this.#quota.assertWithinQuota(scope, record.size_bytes, { category: "memory", executor: tx });
 
       let provenanceRef = record.provenance_ref;
-      if (input.source) {
+      if (input.source && !record.provenance_ref) {
         const provenance = await this.#provenance.createInTransaction(tx, scope, {
           subjectId: id,
           sourceType: input.source.type ?? input.sourceType ?? "external",
@@ -221,10 +221,7 @@ export class MemoryService {
 
     const tx = await this.#client.transaction("write");
     try {
-      const delta = newRecord.size_bytes + byteSize({
-        id, version: nextVersion, contentJson, checksum,
-        changeType: changes.changeType ?? "updated", changeSummary: changes.changeSummary ?? null,
-      }) - Number(existing.size_bytes);
+      const delta = newRecord.size_bytes - Number(existing.size_bytes);
       await this.#quota.assertWithinQuota(scope, delta, { category: "memory", executor: tx });
 
       await tx.execute({
