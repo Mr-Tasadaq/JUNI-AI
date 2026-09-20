@@ -1,4 +1,7 @@
-import OpenAI from "openai";
+import asyncLoadOpenAI() {
+  const module = await import("openai");
+  return module.default;
+}
 import { ProviderError } from "../core/errors.js";
 import { CAPABILITIES } from "../core/provider.js";
 import { requireApiKey, withAbortTimeout, providerUsage } from "./base.js";
@@ -106,6 +109,7 @@ export function createOpenAIProvider(config, { identity } = {}) {
 
     async generate(request) {
       requireApiKey("openai", providerConfig.apiKey);
+      const OpenAI = await asyncLoadOpenAI();
       client ??= new OpenAI({ apiKey: providerConfig.apiKey, timeout: providerConfig.timeoutMs });
 
       const timed = withAbortTimeout(request.signal, request.timeoutMs ?? providerConfig.timeoutMs);
