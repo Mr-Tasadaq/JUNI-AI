@@ -1,4 +1,4 @@
-import asyncLoadGemini() {
+async function asyncLoadGemini() {
   const module = await import("@google/genai");
   return module.GoogleGenAI;
 }
