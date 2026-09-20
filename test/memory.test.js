@@ -122,7 +122,7 @@ test("tenant and user scope isolate reads and writes", async () => {
 test("malformed memory objects and scopes are rejected", async () => {
   const app = await makeApp();
 
-  assert.throws(
+  await assert.rejects(
     () => app.memory.create({ userId: "user-a" }, {
       memoryType: "long_term_memory",
       content: "x",
