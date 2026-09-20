@@ -2,8 +2,8 @@ export const PROVENANCE_SOURCES = Object.freeze([
   "user",
   "external",
   "generated",
-  "tool",
   "model",
+  "tool",
   "system",
 ]);
 
@@ -13,14 +13,19 @@ export const PROVENANCE_EVENTS = Object.freeze([
   "deleted",
   "superseded",
   "corrected",
+  "source_registered",
 ]);
 
 export function createProvenanceRecord({
   subjectId,
   source,
   sourceUri = null,
+  sourceTitle = null,
+  retrievedAt = null,
   sourceHash = null,
   parentIds = [],
+  provider = null,
+  tool = null,
   event = "created",
   metadata = {},
 } = {}) {
@@ -32,19 +37,26 @@ export function createProvenanceRecord({
     subjectId,
     source,
     sourceUri,
+    sourceTitle,
+    retrievedAt,
     sourceHash,
     parentIds: [...parentIds],
+    provider,
+    tool,
     event,
     metadata: structuredClone(metadata),
     createdAt: new Date().toISOString(),
   });
 }
 
-// Step 1 contract only. No blockchain ledger is implemented here.
-// A later audit/ledger module can persist these records and link them to content hashes.
+// Step 1 compatibility contract. Step 2 persists this information through
+// the database-backed ProvenanceService and TamperEvidentLedger.
 export const AI_BLOCKCHAIN_BOUNDARY = Object.freeze({
   purpose: "tamper-evident provenance and audit",
   isIntelligenceEngine: false,
+  implementation: "append-oriented cryptographic hash chain",
+  distributedConsensus: false,
+  externalAnchoring: false,
   records: Object.freeze([
     "important memories",
     "knowledge versions",
