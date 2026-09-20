@@ -25,23 +25,25 @@ export class MemoryRetrievalService {
     return this.#memory.list(scope, {
       ...options,
       memoryType: "user_preference",
-      statuses: ["important", "permanent", "candidate"],
+      statuses: options.includeCandidates ? ["important", "permanent", "candidate"] : ["important", "permanent"],
     });
   }
 
   async semanticMemory(scope, queryVector, options = {}) {
     assertScope(scope);
-    return this.#vectors.search(scope, queryVector, {
+    const results = await this.#vectors.search(scope, queryVector, {
       ...options,
-      metadataFilter: {
-        status: options.includeCandidates ? undefined : "approved",
-        ...(options.metadataFilter ?? {}),
-      },
       objectType: "memory",
-    }).then((results) => results.map((item) => ({
-      ...item,
-      source: item.sourceType,
-    })));
+    });
+
+    const visible = [];
+    for (const item of results) {
+      const record = await this.#memory.get(scope, item.objectId);
+      if (!record) continue;
+      if (!options.includeCandidates && !["important", "permanent"].includes(record.status)) continue;
+      visible.push({ ...item, source: record.source_type, status: record.status });
+    }
+    return visible;
   }
 
   async relevantKnowledge(scope, queryVector, options = {}) {
@@ -55,13 +57,12 @@ export class MemoryRetrievalService {
 
     const text = String(options.queryText ?? "").trim();
     if (!text) return [];
-    const words = text.split(/s+/).filter((word) => word.length > 2).slice(0, 8);
+    const words = text.split(/\s+/).filter((word) => word.length > 2).slice(0, 8);
     if (!words.length) return [];
 
     const clauses = words.map(() => "content_text LIKE ?").join(" OR ");
     const args = words.map((word) => "%" + word.replace(/[%_]/g, "") + "%");
-    const result = await this.#knowledge.clientExecuteScoped(scope, clauses, args, options.limit);
-    return result;
+    return this.#knowledge.searchText(scope, words, { limit: options.limit ?? 10 });
   }
 
   async provenance(scope, subjectId, options = {}) {
