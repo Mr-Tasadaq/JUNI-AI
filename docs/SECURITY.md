@@ -62,3 +62,18 @@ The router can retry and/or fall back without exposing vendor-specific error pay
 ## Realtime voice
 
 Gemini Live is server-side by design in this foundation. The Live API uses stateful WebSocket sessions and supports realtime audio/video input and native audio output. Client microphone access should be introduced later with a secure session/ephemeral-token design rather than shipping a persistent Gemini API key to the browser.
+
+
+## Step 2 persistent-data boundaries
+
+All memory, knowledge, document, vector, provenance, and audit service operations require an explicit tenantId + userId scope.
+
+The storage layer applies both predicates to reads and writes. There is no service method that accepts an object ID alone for cross-scope lookup.
+
+Important and permanent memory or knowledge promotion requires explicit approval metadata. Model-generated output is not trusted as permanent knowledge merely because a model produced it.
+
+Deletion of memory is represented by a tombstone rather than a destructive SQL delete. Historical versions remain available to authorized inspection.
+
+The provenance ledger is append-oriented and cryptographically chained. It is tamper-evident, not distributed consensus and not mathematically immutable.
+
+The HTTP API does not expose raw memory by arbitrary tenant/user headers because Step 1 does not yet provide a real user identity/session authority. The programmatic inspection service is the current boundary until authenticated identity is added.

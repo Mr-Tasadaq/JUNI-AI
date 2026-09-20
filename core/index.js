@@ -8,3 +8,4 @@ export { ProviderError, RouterError, JuniError } from "./errors.js";
 export { authorizeRequest, checkOrigin, redactSecrets, sanitizeEventData, safeTokenEquals } from "./security.js";
 export { createProvenanceRecord, AI_BLOCKCHAIN_BOUNDARY } from "./provenance.js";
 export { assertVoiceSessionContract, VoiceSessionController, VOICE_EVENTS } from "./voice.js";
+export { createJuniMemoryApplication } from "../memory/app.js";

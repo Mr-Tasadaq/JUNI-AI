@@ -1,6 +1,6 @@
 {
   "name": "juni-ai",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "description": "JUNI-AI multi-provider AI agent foundation.",
@@ -15,6 +15,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "0.127.0",
     "@google/genai": "2.23.0",
-    "openai": "7.20.0"
+    "openai": "7.20.0",
+    "@libsql/client": "0.18.0"
   }
 }
