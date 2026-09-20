@@ -41,7 +41,7 @@ export class JuniCore {
     }
 
     const lastMessage = messages.at(-1);
-    if (lastMessage?.role === "user" && lastMessage.content === request.message) {
+    if (lastMessage?.role === "user" && lastMessage.content === normalized.message) {
       messages.pop();
     }
 
