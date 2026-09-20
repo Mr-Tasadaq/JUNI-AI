@@ -127,7 +127,7 @@ It supports the architecture for:
 
 No fake voice pipeline is used.
 
-Google currently documents `gemini-3.8-live` as the default option for most low-latency voice agent experiences, while `gemini-3.1-flash-live-preview` is a legacy preview model. The application therefore keeps `GEMINI_LIVE_MODEL` configurable instead of hard-coding the legacy model. citeturn956799search0turn956799search1
+Google currently documents `gemini-3.8-live` as the default option for most low-latency voice agent experiences, while `gemini-3.1-flash-live-preview` is a legacy preview model. The application therefore keeps `GEMINI_LIVE_MODEL` configurable instead of hard-coding the legacy model.
 
 ## Juni identity
 
