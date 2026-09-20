@@ -10,7 +10,7 @@ test("loads provider-neutral configuration without secrets", () => {
     GEMINI_LIVE_MODEL: "gemini-live-test",
     JUNI_DEFAULT_PROVIDER: "gemini",
     JUNI_FALLBACK_PROVIDERS: "anthropic,openai",
-    JUNI_STORAGE_BUDGET_BYTES: "10737418240",
+    JUNI_STORAGE_BUDGET_BYTES: "10000000000",
   });
 
   assert.equal(config.app.defaultProvider, "gemini");
