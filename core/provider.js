@@ -35,6 +35,7 @@ export function assertProviderContract(provider) {
 
 export function normalizeRequest(request, defaults = {}) {
   return {
+    message: typeof request?.message === "string" ? request.message : undefined,
     messages: Array.isArray(request?.messages) ? request.messages : [],
     task: request?.task ?? "chat",
     modality: request?.modality ?? "text",
