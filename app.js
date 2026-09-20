@@ -233,7 +233,7 @@ async function sendMessage() {
   }
 }
 
-async function requestAssistant(text, history) {
+async function requestAssistant(text, history, allowAuthRetry = true) {
   const payload = {
     message: text,
     messages: history,
@@ -261,10 +261,14 @@ async function requestAssistant(text, history) {
     }
 
     if (response.status === 401) {
+      if (!allowAuthRetry) {
+        return "That access code was rejected. Use “Set access code” in the sidebar to update it.";
+      }
+
       const supplied = window.prompt("Enter your JUNI-AI access code:");
       if (supplied?.trim()) {
         localStorage.setItem(AUTH_KEY, supplied.trim());
-        return requestAssistant(text, history);
+        return requestAssistant(text, history, false);
       }
       return "JUNI-AI needs an access code for the server API. Use “Set access code” in the sidebar.";
     }
