@@ -75,6 +75,25 @@ export function loadConfig(env = process.env) {
       retryBaseDelayMs: intOrDefault(env.JUNI_PROVIDER_RETRY_DELAY_MS, 250, 0),
       modelOverrides: Object.freeze(parseJsonObject(env.JUNI_MODEL_CAPABILITIES_JSON)),
     },
+    storage: {
+      enabled: boolOrDefault(env.JUNI_STORAGE_ENABLED, true),
+      required: boolOrDefault(env.JUNI_STORAGE_REQUIRED, false),
+      databaseUrl: stringOrUndefined(env.JUNI_DATABASE_URL),
+      databaseAuthToken: stringOrUndefined(env.JUNI_DATABASE_AUTH_TOKEN),
+      quotaBytes: intOrDefault(env.JUNI_STORAGE_BUDGET_BYTES, 10 * 1024 * 1024 * 1024, 1),
+      warningThresholds: splitCsv(env.JUNI_STORAGE_WARNING_THRESHOLDS ?? "0.8,0.9")
+        .map(Number)
+        .filter((value) => Number.isFinite(value) && value > 0 && value < 1),
+    },
+    retention: {
+      transientContextDays: intOrDefault(env.JUNI_RETENTION_TRANSIENT_DAYS, 1, 0),
+      logsDays: intOrDefault(env.JUNI_RETENTION_LOGS_DAYS, 30, 0),
+      cacheDays: intOrDefault(env.JUNI_RETENTION_CACHE_DAYS, 7, 0),
+      mediaDays: intOrDefault(env.JUNI_RETENTION_MEDIA_DAYS, 365, 0),
+      conversationDays: intOrDefault(env.JUNI_RETENTION_CONVERSATION_DAYS, 90, 0),
+      memoryDays: intOrDefault(env.JUNI_RETENTION_MEMORY_DAYS, 0, 0),
+      researchDays: intOrDefault(env.JUNI_RETENTION_RESEARCH_DAYS, 30, 0),
+    },
     providers,
     security: {
       apiToken: stringOrUndefined(env.JUNI_API_TOKEN),
