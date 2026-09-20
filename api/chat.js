@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import OpenAI from "openai";
 import { checkRateLimit } from "../lib/rate-limit.js";
 
@@ -35,8 +36,12 @@ function getBearerToken(req) {
 function isAuthorized(req) {
   const configuredToken = process.env.JUNI_API_TOKEN;
   if (!configuredToken) return false;
+
   const suppliedToken = getBearerToken(req);
-  return suppliedToken.length > 0 && suppliedToken === configuredToken;
+  const expected = Buffer.from(configuredToken);
+  const supplied = Buffer.from(suppliedToken);
+
+  return supplied.length === expected.length && timingSafeEqual(supplied, expected);
 }
 
 function normalizeMessages(messages) {
@@ -112,8 +117,17 @@ export async function handler(req, res) {
     });
   }
 
+  const history = normalizeMessages(body.messages);
+  const last = history.at(-1);
+
+  // The browser includes the current user message in the history payload.
+  // Remove that duplicate before appending the canonical current message.
+  if (last?.role === "user" && last.content === message) {
+    history.pop();
+  }
+
   const input = [
-    ...normalizeMessages(body.messages),
+    ...history,
     { role: "user", content: message.slice(0, MAX_MESSAGE_LENGTH) },
   ].slice(-MAX_HISTORY);
 
