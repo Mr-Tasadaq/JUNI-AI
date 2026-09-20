@@ -65,8 +65,8 @@ export class ModelRouter {
     const preferred = normalized.provider ? [normalized.provider] : [];
     const configured = [
       ...preferred,
-      this.#config.app.defaultProvider,
       ...(this.#config.app.providerPriority ?? []),
+      this.#config.app.defaultProvider,
       ...(this.#config.app.fallbackProviders ?? []),
     ];
 
