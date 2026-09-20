@@ -78,19 +78,19 @@ export default async function handler(req, res) {
     return json(res, 429, { error: "Too many requests. Please try again shortly." });
   }
 
-  const configured = configuredProviderNames(app.config);
-  if (!configured.length) {
-    return json(res, 503, {
-      error: "No AI provider API key is configured.",
-      providers: app.juni.providerStatus(),
-    });
-  }
-
   const body = req.body ?? {};
   const message = typeof body.message === "string" ? body.message.trim() : "";
   if (!message || message.length > app.config.security.maxMessageLength) {
     return json(res, 400, {
       error: "Message must be between 1 and " + app.config.security.maxMessageLength + " characters.",
+    });
+  }
+
+  const configured = configuredProviderNames(app.config);
+  if (!configured.length) {
+    return json(res, 503, {
+      error: "No AI provider API key is configured.",
+      providers: await app.juni.providerHealth(),
     });
   }
 
