@@ -1,4 +1,7 @@
-import { GoogleGenAI } from "@google/genai";
+import asyncLoadGemini() {
+  const module = await import("@google/genai");
+  return module.GoogleGenAI;
+}
 import { ProviderError } from "../core/errors.js";
 import { requireApiKey, withAbortTimeout, providerUsage } from "./base.js";
 
@@ -122,6 +125,7 @@ export function createGeminiProvider(config, { identity } = {}) {
 
     async generate(request) {
       requireApiKey("gemini", providerConfig.apiKey);
+      const GoogleGenAI = await asyncLoadGemini();
       client ??= new GoogleGenAI({ apiKey: providerConfig.apiKey });
 
       const timed = withAbortTimeout(request.signal, request.timeoutMs ?? providerConfig.timeoutMs);
