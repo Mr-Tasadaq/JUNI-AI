@@ -108,8 +108,9 @@ export class ModelRouter {
     for (const candidate of candidates) {
       if (!candidate.health.available) continue;
 
-      const started = Date.now();
-      this.#events?.emit("provider.started", {
+      for (let retry = 0; retry <= this.#config.app.maxProviderRetries; retry += 1) {
+        const started = Date.now();
+        this.#events?.emit("provider.started", {
         provider: candidate.provider.name,
         task: normalized.task,
       }, {
@@ -169,7 +170,9 @@ export class ModelRouter {
           provider: candidate.provider.name,
           model: candidate.model,
           requestId: normalized.metadata?.requestId,
-        });
+          });
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+        }
       }
     }
 
