@@ -146,6 +146,32 @@ export class KnowledgeService {
     return result.rows.map(parseKnowledge);
   }
 
+  async searchText(scope, words, { limit = 10 } = {}) {
+    assertScope(scope);
+    const terms = (Array.isArray(words) ? words : [words])
+      .map((word) => String(word).trim())
+      .filter((word) => word.length > 2)
+      .slice(0, 8);
+
+    if (!terms.length) return [];
+    const clauses = terms.map(() => "content_text LIKE ?").join(" OR ");
+    const args = [scope.tenantId, scope.userId, ...terms.map((word) => "%" + word.replace(/[%_]/g, "") + "%")];
+    const safeLimit = Math.max(1, Math.min(100, Number(limit) || 10));
+
+    const result = await this.#client.execute({
+      sql: `SELECT * FROM knowledge_records
+        WHERE tenant_id = ? AND user_id = ?
+          AND deleted_at IS NULL
+          AND status IN ('important','permanent')
+          AND (${clauses})
+        ORDER BY importance DESC, updated_at DESC
+        LIMIT ?`,
+      args: [...args, safeLimit],
+    });
+
+    return result.rows.map(parseKnowledge);
+  }
+
   async update(scope, id, changes = {}) {
     assertScope(scope);
     const existing = await this.get(scope, id, { includeDeleted: true });
