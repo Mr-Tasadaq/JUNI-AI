@@ -1,5 +1,6 @@
 const STORAGE_KEY = "juni-ai-chats-v1";
 const THEME_KEY = "juni-ai-theme-v1";
+const AUTH_KEY = "juni-ai-access-token-v1";
 
 const elements = {
   composer: document.querySelector("#composer"),
@@ -14,6 +15,7 @@ const elements = {
   exportButton: document.querySelector("#exportButton"),
   themeButton: document.querySelector("#themeButton"),
   themeIcon: document.querySelector("#themeIcon"),
+  accessCodeButton: document.querySelector("#accessCodeButton"),
   menuButton: document.querySelector("#menuButton"),
 };
 
@@ -71,6 +73,8 @@ elements.clearHistory.addEventListener("click", () => {
 });
 
 elements.exportButton.addEventListener("click", exportActiveChat);
+
+elements.accessCodeButton.addEventListener("click", setAccessCode);
 
 elements.themeButton.addEventListener("click", () => {
   const nextTheme = document.documentElement.dataset.theme === "light" ? "dark" : "light";
@@ -234,11 +238,17 @@ async function requestAssistant(text, history) {
     message: text,
     messages: history,
   };
+  const headers = { "Content-Type": "application/json" };
+  const accessToken = localStorage.getItem(AUTH_KEY);
+
+  if (accessToken) {
+    headers.Authorization = `Bearer ${accessToken}`;
+  }
 
   try {
     const response = await fetch("/api/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify(payload),
     });
 
@@ -247,12 +257,47 @@ async function requestAssistant(text, history) {
       if (typeof data?.reply === "string" && data.reply.trim()) {
         return data.reply.trim();
       }
+      throw new Error("The server returned an invalid response.");
     }
-  } catch {
-    // Fall through to the local demo response.
-  }
 
-  return demoReply(text);
+    if (response.status === 401) {
+      const supplied = window.prompt("Enter your JUNI-AI access code:");
+      if (supplied?.trim()) {
+        localStorage.setItem(AUTH_KEY, supplied.trim());
+        return requestAssistant(text, history);
+      }
+      return "JUNI-AI needs an access code for the server API. Use “Set access code” in the sidebar.";
+    }
+
+    let errorMessage = `The assistant service returned HTTP ${response.status}.`;
+    try {
+      const data = await response.json();
+      if (typeof data?.error === "string") errorMessage = data.error;
+    } catch {
+      // Keep the generic HTTP error.
+    }
+    return errorMessage;
+  } catch {
+    return demoReply(text);
+  }
+}
+
+function setAccessCode() {
+  const current = localStorage.getItem(AUTH_KEY) || "";
+  const next = window.prompt(
+    current ? "Update your JUNI-AI access code:" : "Enter your JUNI-AI access code:",
+    current
+  );
+
+  if (next === null) return;
+
+  if (next.trim()) {
+    localStorage.setItem(AUTH_KEY, next.trim());
+    window.alert("Access code saved on this device.");
+  } else {
+    localStorage.removeItem(AUTH_KEY);
+    window.alert("Access code cleared.");
+  }
 }
 
 function demoReply(text) {
@@ -281,7 +326,7 @@ function demoReply(text) {
     return "Try narrowing the brainstorm by audience, problem, platform, and time available. A focused prompt usually produces much more useful ideas.";
   }
 
-  return "Demo mode is active. Your message was saved locally. Connect a POST /api/chat endpoint to route messages to your preferred AI provider without placing an API key in the browser.";
+  return "Demo mode is active. Your message was saved locally. Add the JUNI-AI access code and configure the server environment to enable live AI responses.";
 }
 
 function showTyping() {
