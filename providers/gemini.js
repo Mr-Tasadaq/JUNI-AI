@@ -3,7 +3,7 @@ async function asyncLoadGemini() {
   return module.GoogleGenAI;
 }
 import { ProviderError } from "../core/errors.js";
-import { requireApiKey, withAbortTimeout, providerUsage } from "./base.js";
+import { requireApiKey, withAbortTimeout, withTimeout, providerUsage } from "./base.js";
 
 function toGeminiParts(content) {
   if (typeof content === "string") return [{ text: content }];
@@ -130,15 +130,18 @@ export function createGeminiProvider(config, { identity } = {}) {
 
       const timed = withAbortTimeout(request.signal, request.timeoutMs ?? providerConfig.timeoutMs);
       try {
-        const response = await client.models.generateContent({
-          model: request.model || providerConfig.defaultModel,
-          contents: toGeminiContents(request.messages),
-          config: {
-            systemInstruction: identity,
-            tools: toGeminiTools(request.tools),
-            maxOutputTokens: request.maxOutputTokens ?? 1200,
-          },
-        });
+        const response = await withTimeout(
+          client.models.generateContent({
+            model: request.model || providerConfig.defaultModel,
+            contents: toGeminiContents(request.messages),
+            config: {
+              systemInstruction: identity,
+              tools: toGeminiTools(request.tools),
+              maxOutputTokens: request.maxOutputTokens ?? 1200,
+            },
+          }),
+          { signal: request.signal, timeoutMs: request.timeoutMs ?? providerConfig.timeoutMs }
+        );
 
         return {
           provider: "gemini",
