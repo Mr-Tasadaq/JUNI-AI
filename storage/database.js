@@ -21,7 +21,10 @@ export function resolveDatabaseConfig(env = process.env) {
 }
 
 export function createJuniDatabase(options = {}) {
-  const config = { ...resolveDatabaseConfig(), ...options };
+  const config = {
+    ...resolveDatabaseConfig(),
+    ...Object.fromEntries(Object.entries(options).filter(([, value]) => value !== undefined)),
+  };
   const client = createClient({
     url: config.url,
     authToken: config.authToken,
