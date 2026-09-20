@@ -96,6 +96,7 @@ export default async function handler(req, res) {
 
   const requestId = randomUUID();
   const request = {
+    message,
     provider: typeof body.provider === "string" ? body.provider : undefined,
     model: typeof body.model === "string" ? body.model : undefined,
     task: typeof body.task === "string" ? body.task : "chat",
