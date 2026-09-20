@@ -66,6 +66,7 @@ export function providerUsage(usage) {
     outputTokens: usage.output_tokens ?? usage.completion_tokens ?? usage.candidatesTokenCount ?? usage.outputTokens ?? null,
     totalTokens: usage.total_tokens ?? usage.totalTokenCount ?? usage.totalTokens ?? null,
     cachedInputTokens: usage.input_cached_tokens ?? usage.cached_input_tokens ?? usage.cachedContentTokenCount ?? null,
+    cost: usage.cost ?? null,
   };
 }
 
