@@ -130,6 +130,10 @@ export class ModelRouter {
     const { request: normalized, candidates } = await this.candidates(request);
     const attempts = [];
     const maxRetries = this.#config.app.maxProviderRetries ?? 1;
+
+    if (!candidates.some((candidate) => candidate.health.available)) {
+      throw new RouterError("No available provider satisfies the requested capabilities.");
+    }
     const retryDelay = this.#config.app.retryBaseDelayMs ?? 250;
 
     for (const candidate of candidates) {
