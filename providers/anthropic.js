@@ -133,7 +133,7 @@ export function createAnthropicProvider(config, { identity } = {}) {
           provider: "anthropic",
           status: error?.status,
           code: error?.error?.type || error?.code || error?.name || "ANTHROPIC_ERROR",
-          retryable: error?.status === 408 || error?.status === 409 || error?.status === 429 || (error?.status >= 500),
+          retryable: error?.retryable || error?.status === 408 || error?.status === 409 || error?.status === 429 || (error?.status >= 500) || /TIMEOUT|ABORT/i.test(String(error?.code || error?.name)),
           cause: error,
         });
       } finally {
@@ -168,7 +168,7 @@ export function createAnthropicProvider(config, { identity } = {}) {
           provider: "anthropic",
           status: error?.status,
           code: error?.error?.type || error?.code || error?.name || "ANTHROPIC_STREAM_ERROR",
-          retryable: error?.status === 408 || error?.status === 429 || (error?.status >= 500),
+          retryable: error?.retryable || error?.status === 408 || error?.status === 429 || (error?.status >= 500) || /TIMEOUT|ABORT/i.test(String(error?.code || error?.name)),
           cause: error,
         });
       } finally {
