@@ -364,16 +364,21 @@ See docs/MEMORY.md, docs/ARCHITECTURE.md, and docs/SECURITY.md.
 
 Step 3 can add authenticated end-user memory HTTP APIs, live research ingestion, and other tools on top of these scoped services without coupling them to a model provider.
 
-## Step 2 prerequisites
+## Step 3 prerequisites
 
-Step 2 should connect a durable memory layer to the existing events/provenance contracts.
+Step 3 can build research/web ingestion on top of the scoped services in Step 2.
 
-That step should define persistence, retention, user consent/approval policy, deletion/correction semantics, embeddings/vector storage, and storage-budget accounting before building the full memory engine.
+Prerequisites:
 
-Step 3 can connect research/web tools.
+- authenticated end-user identity/session context for HTTP memory access
+- a web/search tool implementation registered through the Step 1 ToolRegistry
+- source fetch/retrieval policy and domain/safety controls
+- research-result retention and approval rules
+- an embedding provider or embedding API integration
+- a clear policy for promoting external research from candidate knowledge to important/permanent knowledge
 
-Step 4 can add the durable tamper-evident audit/provenance implementation.
+Step 4 can add a durable external audit checkpoint or other independent anchoring for the tamper-evident provenance chain.
 
 Step 5 can expand the Gemini Live browser experience using secure session credentials.
 
-Step 1 deliberately stops before implementing those systems.
+Step 2 intentionally stops before unrestricted autonomous learning, Internet access, browser automation, full voice/video UX, and a distributed blockchain network.
