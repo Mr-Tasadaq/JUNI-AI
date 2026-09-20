@@ -53,14 +53,18 @@ export class ModelRouter {
   }
 
   async candidates(request) {
+    if (request?.provider && !this.#providers.has(request.provider)) {
+      throw new RouterError("Unknown provider requested: " + request.provider);
+    }
+
     const normalized = normalizeRequest(request, {
-      provider: this.#config.app.defaultProvider,
       model: this.#config.app.defaultModel,
     });
 
     const preferred = normalized.provider ? [normalized.provider] : [];
     const configured = [
       ...preferred,
+      ...(this.#config.app.providerPriority ?? []),
       this.#config.app.defaultProvider,
       ...(this.#config.app.fallbackProviders ?? []),
     ];

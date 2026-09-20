@@ -27,7 +27,6 @@ export class JuniCore {
   async generate(request = {}) {
     const requestId = request.metadata?.requestId ?? randomUUID();
     const normalized = normalizeRequest(request, {
-      provider: this.#config.app.defaultProvider,
       model: this.#config.app.defaultModel,
     });
 
@@ -148,7 +147,6 @@ export class JuniCore {
 
     const requestId = request.metadata?.requestId ?? randomUUID();
     const normalized = normalizeRequest(request, {
-      provider: this.#config.app.defaultProvider,
       model: this.#config.app.defaultModel,
     });
 

@@ -68,6 +68,7 @@ export function loadConfig(env = process.env) {
       }),
       defaultProvider: stringOrUndefined(env.JUNI_DEFAULT_PROVIDER) ?? "openai",
       defaultModel: stringOrUndefined(env.JUNI_DEFAULT_MODEL),
+      providerPriority: Object.freeze(splitCsv(env.JUNI_PROVIDER_PRIORITY ?? "openai,anthropic,gemini")),
       fallbackProviders: Object.freeze(splitCsv(env.JUNI_FALLBACK_PROVIDERS ?? "anthropic,gemini")),
       maxToolRounds: intOrDefault(env.JUNI_MAX_TOOL_ROUNDS, 4, 0),
       maxProviderRetries: intOrDefault(env.JUNI_MAX_PROVIDER_RETRIES, 1, 0),
@@ -91,7 +92,7 @@ export function loadConfig(env = process.env) {
       maxEventPayloadBytes: intOrDefault(env.JUNI_MAX_EVENT_PAYLOAD_BYTES, 8_192, 256),
     },
     provenance: {
-      storageBudgetBytes: intOrDefault(env.JUNI_STORAGE_BUDGET_BYTES, 10 * 1024 * 1024 * 1024, 1),
+      storageBudgetBytes: intOrDefault(env.JUNI_STORAGE_BUDGET_BYTES, 10_000_000_000, 1),
     },
   });
 }

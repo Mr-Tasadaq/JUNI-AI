@@ -47,6 +47,26 @@ test("routes to a provider matching modality and task requirements", async () =>
   assert.equal(result.provider.name, "gemini");
 });
 
+test("uses configured provider priority when multiple providers are available", async () => {
+  const config = loadConfig({
+    JUNI_DEFAULT_PROVIDER: "openai",
+    JUNI_PROVIDER_PRIORITY: "anthropic,openai",
+    JUNI_FALLBACK_PROVIDERS: "",
+  });
+  const router = createRouter({
+    config,
+    events: new EventBus(),
+    providers: {
+      openai: fakeProvider("openai", ["text"]),
+      anthropic: fakeProvider("anthropic", ["text"]),
+      gemini: fakeProvider("gemini", ["text"], { available: false }),
+    },
+  });
+
+  const selected = await router.select({ messages: [{ role: "user", content: "hello" }] });
+  assert.equal(selected.provider.name, "anthropic");
+});
+
 test("falls back after a retryable provider failure", async () => {
   const config = loadConfig({
     JUNI_DEFAULT_PROVIDER: "openai",
@@ -72,8 +92,8 @@ test("falls back after a retryable provider failure", async () => {
   assert.equal(result.provider, "anthropic");
 });
 
-test("throws on an unknown or unsupported provider requirement", async () => {
-  const config = loadConfig({ JUNI_DEFAULT_PROVIDER: "does-not-exist" });
+test("throws on an explicitly unknown provider", async () => {
+  const config = loadConfig({ JUNI_DEFAULT_PROVIDER: "openai" });
   const router = createRouter({
     config,
     events: new EventBus(),
@@ -81,7 +101,10 @@ test("throws on an unknown or unsupported provider requirement", async () => {
   });
 
   await assert.rejects(
-    () => router.generate({ messages: [{ role: "user", content: "hello" }] }),
-    /No available provider/
+    () => router.generate({
+      provider: "does-not-exist",
+      messages: [{ role: "user", content: "hello" }],
+    }),
+    /Unknown provider requested/
   );
 });

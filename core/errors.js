@@ -31,11 +31,13 @@ export function normalizeProviderError(provider, error) {
   const status = Number(error?.status) || Number(error?.statusCode) || undefined;
   const code = error?.code || error?.name || "PROVIDER_ERROR";
   const retryable =
+    Boolean(error?.retryable) ||
     status === 408 ||
     status === 409 ||
     status === 429 ||
     (status >= 500 && status <= 599) ||
-    ["ETIMEDOUT", "ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "AbortError"].includes(code);
+    ["ETIMEDOUT", "ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "AbortError"].includes(code) ||
+    /TIMEOUT|ABORT/i.test(String(code));
 
   return new ProviderError(
     typeof error?.message === "string" ? error.message : "Provider request failed.",

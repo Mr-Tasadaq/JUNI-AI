@@ -109,7 +109,7 @@ export default async function handler(req, res) {
 
   try {
     if (request.stream) {
-      return streamResponse(
+      return await streamResponse(
         res,
         app.juni.stream(request),
         requestId

@@ -35,21 +35,24 @@ function toOpenAIInput(messages = []) {
       }];
     }
 
-    const content = message.toolCalls?.length
-      ? [
-          ...(message.content ? [{ type: "output_text", text: message.content }] : []),
-          ...message.toolCalls.map((call) => ({
-            type: "function_call",
-            call_id: call.id,
-            name: call.name,
-            arguments: JSON.stringify(call.arguments ?? {}),
-          })),
-        ]
-      : toOpenAIContent(message.content);
+    if (message.role === "assistant" && message.toolCalls?.length) {
+      return [
+        ...(message.content ? [{
+          role: "assistant",
+          content: [{ type: "input_text", text: message.content }],
+        }] : []),
+        ...message.toolCalls.map((call) => ({
+          type: "function_call",
+          call_id: call.id,
+          name: call.name,
+          arguments: JSON.stringify(call.arguments ?? {}),
+        })),
+      ];
+    }
 
     return [{
       role: message.role === "assistant" ? "assistant" : "user",
-      content,
+      content: toOpenAIContent(message.content),
     }];
   });
 }
@@ -135,7 +138,7 @@ export function createOpenAIProvider(config, { identity } = {}) {
           provider: "openai",
           status: error?.status,
           code: error?.code || error?.name || "OPENAI_ERROR",
-          retryable: error?.status === 408 || error?.status === 409 || error?.status === 429 || (error?.status >= 500),
+          retryable: error?.retryable || error?.status === 408 || error?.status === 409 || error?.status === 429 || (error?.status >= 500) || /TIMEOUT|ABORT/i.test(String(error?.code || error?.name)),
           cause: error,
         });
       } finally {

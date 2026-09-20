@@ -10,7 +10,7 @@ test("loads provider-neutral configuration without secrets", () => {
     GEMINI_LIVE_MODEL: "gemini-live-test",
     JUNI_DEFAULT_PROVIDER: "gemini",
     JUNI_FALLBACK_PROVIDERS: "anthropic,openai",
-    JUNI_STORAGE_BUDGET_BYTES: "10737418240",
+    JUNI_STORAGE_BUDGET_BYTES: "10000000000",
   });
 
   assert.equal(config.app.defaultProvider, "gemini");
@@ -18,8 +18,9 @@ test("loads provider-neutral configuration without secrets", () => {
   assert.equal(config.providers.anthropic.defaultModel, "claude-test");
   assert.equal(config.providers.gemini.defaultModel, "gemini-test");
   assert.equal(config.providers.gemini.liveModel, "gemini-live-test");
+  assert.deepEqual(config.app.providerPriority, ["openai", "anthropic", "gemini"]);
   assert.deepEqual(config.app.fallbackProviders, ["anthropic", "openai"]);
-  assert.equal(config.provenance.storageBudgetBytes, 10_737_418_240);
+  assert.equal(config.provenance.storageBudgetBytes, 10_000_000_000);
   assert.deepEqual(configuredProviderNames(config), []);
 });
 
