@@ -70,6 +70,8 @@ export function loadConfig(env = process.env) {
       defaultModel: stringOrUndefined(env.JUNI_DEFAULT_MODEL),
       fallbackProviders: Object.freeze(splitCsv(env.JUNI_FALLBACK_PROVIDERS ?? "anthropic,gemini")),
       maxToolRounds: intOrDefault(env.JUNI_MAX_TOOL_ROUNDS, 4, 0),
+      maxProviderRetries: intOrDefault(env.JUNI_MAX_PROVIDER_RETRIES, 1, 0),
+      retryBaseDelayMs: intOrDefault(env.JUNI_PROVIDER_RETRY_DELAY_MS, 250, 0),
       modelOverrides: Object.freeze(parseJsonObject(env.JUNI_MODEL_CAPABILITIES_JSON)),
     },
     providers,
