@@ -1,4 +1,7 @@
-import Anthropic from "@anthropic-ai/sdk";
+import asyncLoadAnthropic() {
+  const module = await import("@anthropic-ai/sdk");
+  return module.default;
+}
 import { ProviderError } from "../core/errors.js";
 import { requireApiKey, withAbortTimeout, providerUsage } from "./base.js";
 
@@ -103,7 +106,8 @@ export function createAnthropicProvider(config, { identity } = {}) {
 
     async generate(request) {
       requireApiKey("anthropic", providerConfig.apiKey);
-      client ??= new Anthropic({ apiKey: providerConfig.apiKey });
+      const Anthropic = await asyncLoadAnthropic();
+      client ??= new Anthropic({ apiKey: providerConfig.apiKey, timeout: providerConfig.timeoutMs });
 
       const timed = withAbortTimeout(request.signal, request.timeoutMs ?? providerConfig.timeoutMs);
       try {
