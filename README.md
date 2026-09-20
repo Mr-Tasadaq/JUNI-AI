@@ -324,6 +324,46 @@ Set provider keys and the server access token in the deployment environment. Do 
 └── vercel.json
 ```
 
+
+## Step 2 — persistent memory, knowledge storage & provenance
+
+Implemented in the repository:
+
+- 10 GiB configurable logical persistent-memory/storage quota
+- short-term conversation context separated from long-term memory
+- long-term memory with transient/candidate/important/permanent/archived/deleted states
+- explicit approval requirement for important/permanent model-assisted knowledge
+- historical versions for important memory and knowledge changes
+- document metadata plus versioned extracted text storage
+- provider-neutral embedding/vector interface with a LibSQL implementation
+- source registration and provenance metadata
+- research result, cache, media metadata, learning event, audit, and model/provider metadata stores
+- configurable retention policies with explicit purge confirmation
+- tamper-evident cryptographic hash-chain audit ledger
+- scoped inspection services for memory, versions, provenance, storage usage, learning events, audit records, and ledger verification
+- controlled learning pipeline from normalization through optional embedding
+- tenant/user isolation in all persistent reads and writes
+
+The 10 GiB value is a logical budget: 10 × 1024³ = 10,737,418,240 bytes. It is not a model size or intelligence measurement.
+
+The AI Blockchain concept is implemented only as an append-oriented provenance/audit chain. It does not provide a second intelligence engine, distributed consensus, or an unconditional immutability guarantee.
+
+### Step 2 storage configuration
+
+Set JUNI_DATABASE_URL for the backing LibSQL-compatible database.
+
+Local development example:
+
+JUNI_DATABASE_URL=file:juni.db
+
+For durable serverless deployments, use a hosted LibSQL/Turso-compatible URL plus JUNI_DATABASE_AUTH_TOKEN. The local/Vercel fallback file path is not a substitute for durable multi-instance persistence.
+
+Quota and retention settings are configured through the Step 2 variables in .env.example.
+
+See docs/MEMORY.md, docs/ARCHITECTURE.md, and docs/SECURITY.md.
+
+Step 3 can add authenticated end-user memory HTTP APIs, live research ingestion, and other tools on top of these scoped services without coupling them to a model provider.
+
 ## Step 2 prerequisites
 
 Step 2 should connect a durable memory layer to the existing events/provenance contracts.
