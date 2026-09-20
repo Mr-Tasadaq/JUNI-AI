@@ -35,7 +35,7 @@ const CATEGORY_QUERIES = Object.freeze({
   provenance: [
     "SELECT COALESCE(SUM(size_bytes),0) AS bytes FROM sources WHERE tenant_id = ? AND user_id = ?",
     "SELECT COALESCE(SUM(size_bytes),0) AS bytes FROM provenance_records WHERE tenant_id = ? AND user_id = ?",
-    "SELECT COALESCE(SUM(payload_hash) IS NOT NULL,0) AS bytes FROM ledger_events WHERE tenant_id = ? AND user_id = ?",
+    "SELECT COALESCE(SUM(size_bytes),0) AS bytes FROM ledger_events WHERE tenant_id = ? AND user_id = ?",
   ],
   other: [
     "SELECT COALESCE(SUM(size_bytes),0) AS bytes FROM research_results WHERE tenant_id = ? AND user_id = ?",
@@ -87,11 +87,12 @@ export function createStorageQuotaManager({ client, quotaBytes, warningThreshold
     };
   }
 
-  async function assertWithinQuota(scope, deltaBytes = 0, { category = "other" } = {}) {
+  async function assertWithinQuota(scope, deltaBytes = 0, { category = "other", executor = client } = {}) {
     if (!STORAGE_CATEGORIES.includes(category)) throw new TypeError("Invalid storage category.");
-    if (deltaBytes <= 0) return;
+    if (!Number.isFinite(deltaBytes)) throw new TypeError("deltaBytes must be finite.");
+    if (deltaBytes === 0) return;
 
-    const current = await usage(scope);
+    const current = await usageWithExecutor(executor, scope);
     if (current.usedBytes + deltaBytes > quotaBytes) {
       const error = new Error("JUNI storage quota exceeded.");
       error.code = "STORAGE_QUOTA_EXCEEDED";
@@ -101,6 +102,36 @@ export function createStorageQuotaManager({ client, quotaBytes, warningThreshold
       error.requestedBytes = deltaBytes;
       throw error;
     }
+  }
+
+  async function usageWithExecutor(executor, scope) {
+    const args = [scope.tenantId, scope.userId];
+    const categories = {};
+
+    for (const category of STORAGE_CATEGORIES) {
+      let total = 0;
+      for (const sql of CATEGORY_QUERIES[category]) {
+        const result = await executor.execute({ sql, args });
+        total += toNumber(result.rows[0]?.bytes);
+      }
+      categories[category] = total;
+    }
+
+    const usedBytes = Object.values(categories).reduce((sum, value) => sum + value, 0);
+    return {
+      quotaBytes,
+      usedBytes,
+      remainingBytes: Math.max(0, quotaBytes - usedBytes),
+      usagePercentage: usedBytes / quotaBytes * 100,
+      categories,
+      warnings: warningThresholds
+        .filter((threshold) => usedBytes / quotaBytes >= threshold)
+        .map((threshold) => ({ threshold, percentage: threshold * 100 })),
+      enforcement: {
+        canWriteBytes: Math.max(0, quotaBytes - usedBytes),
+        hardLimit: true,
+      },
+    };
   }
 
   return Object.freeze({
