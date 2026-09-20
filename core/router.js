@@ -1,5 +1,5 @@
 import { normalizeRequest, capabilitySupports } from "./provider.js";
-import { ProviderError, RouterError, normalizeProviderError } from "./errors.js";
+import { RouterError, normalizeProviderError } from "./errors.js";
 
 function requirementsFor(request) {
   const required = ["text"];
@@ -9,16 +9,26 @@ function requirementsFor(request) {
   if (request.stream) required.push("streaming");
   if (request.tools.length) required.push("toolCalling");
   if (request.task === "voice") required.push("liveVoice");
-  if (request.task === "research" && request.metadata?.requiresWebResearch) required.push("webResearch");
+  if (request.task === "research" && request.metadata?.requiresWebResearch) {
+    required.push("webResearch");
+  }
 
   return required;
 }
 
 function latencyScore(latency, provider) {
   const value = provider.latencyClass ?? "balanced";
-  if (latency === "low") return value === "low" ? 1 : value === "balanced" ? 0.5 : 0;
-  if (latency === "high-quality") return value === "high-quality" ? 1 : value === "balanced" ? 0.75 : 0.25;
+  if (latency === "low") {
+    return value === "low" ? 1 : value === "balanced" ? 0.5 : 0;
+  }
+  if (latency === "high-quality") {
+    return value === "high-quality" ? 1 : value === "balanced" ? 0.75 : 0.25;
+  }
   return value === "balanced" ? 1 : 0.75;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export class ModelRouter {
@@ -27,7 +37,9 @@ export class ModelRouter {
   #events;
 
   constructor({ providers, config, events }) {
-    this.#providers = new Map(Object.entries(providers).map(([name, provider]) => [name, provider]));
+    this.#providers = new Map(
+      Object.entries(providers).filter(([name]) => name !== "geminiLive")
+    );
     this.#config = config;
     this.#events = events;
   }
@@ -51,11 +63,9 @@ export class ModelRouter {
       ...preferred,
       this.#config.app.defaultProvider,
       ...(this.#config.app.fallbackProviders ?? []),
-      ...this.#config.app.providerPriorities ?? [],
     ];
 
     const unique = [...new Set(configured.filter(Boolean))];
-
     const requirements = requirementsFor(normalized);
     const scored = [];
 
@@ -64,20 +74,29 @@ export class ModelRouter {
       const provider = this.#providers.get(name);
       if (!provider) continue;
 
-      const health = await provider.health({ model: normalized.model, signal: normalized.signal });
-      const capabilities = provider.capabilities(normalized.model);
+      const health = await provider.health({
+        model: normalized.model,
+        signal: normalized.signal,
+      });
+      const model = normalized.model || provider.defaultModel;
+      const capabilities = provider.capabilities(model);
 
       if (!capabilitySupports(capabilities, requirements)) continue;
 
-      const requestedModel = normalized.model;
-      const model = requestedModel || provider.defaultModel;
       const score =
         (health.available ? this.#config.routing.availabilityWeight : 0) +
         capabilities.length * this.#config.routing.capabilityWeight +
         latencyScore(normalized.latency, provider) * this.#config.routing.latencyWeight +
         Math.max(0, 20 - index) * this.#config.routing.priorityWeight;
 
-      scored.push({ provider, model, health, capabilities, score, order: index });
+      scored.push({
+        provider,
+        model,
+        health,
+        capabilities,
+        score,
+        order: index,
+      });
     }
 
     scored.sort((a, b) => b.score - a.score || a.order - b.order);
@@ -85,8 +104,9 @@ export class ModelRouter {
   }
 
   async select(request) {
-    const { candidates } = await this.candidates(request);
+    const { request: normalized, candidates } = await this.candidates(request);
     const selected = candidates.find((candidate) => candidate.health.available);
+
     if (!selected) {
       throw new RouterError("No available provider satisfies the requested capabilities.");
     }
@@ -95,7 +115,12 @@ export class ModelRouter {
       provider: selected.provider.name,
       model: selected.model,
       capabilities: selected.capabilities,
-      task: request?.task ?? "chat",
+      task: normalized.task,
+      modality: normalized.modality,
+    }, {
+      requestId: normalized.metadata?.requestId,
+      provider: selected.provider.name,
+      model: selected.model,
     });
 
     return selected;
@@ -104,74 +129,83 @@ export class ModelRouter {
   async generate(request) {
     const { request: normalized, candidates } = await this.candidates(request);
     const attempts = [];
+    const maxRetries = this.#config.app.maxProviderRetries ?? 1;
+    const retryDelay = this.#config.app.retryBaseDelayMs ?? 250;
 
     for (const candidate of candidates) {
       if (!candidate.health.available) continue;
 
-      for (let retry = 0; retry <= this.#config.app.maxProviderRetries; retry += 1) {
+      for (let retry = 0; retry <= maxRetries; retry += 1) {
         const started = Date.now();
+
         this.#events?.emit("provider.started", {
-        provider: candidate.provider.name,
-        task: normalized.task,
-      }, {
-        provider: candidate.provider.name,
-        model: candidate.model,
-        requestId: normalized.metadata?.requestId,
-      });
-
-      try {
-        const response = await candidate.provider.generate(
-          { ...normalized, model: candidate.model },
-          { timeoutMs: candidate.health.timeoutMs }
-        );
-
-        this.#events?.emit("provider.completed", {
-          latencyMs: Date.now() - started,
-          usage: response.usage ?? null,
-        }, {
-          provider: candidate.provider.name,
-          model: response.model ?? candidate.model,
-          requestId: normalized.metadata?.requestId,
-        });
-
-        return {
-          ...response,
-          provider: response.provider ?? candidate.provider.name,
-          model: response.model ?? candidate.model,
-        };
-      } catch (error) {
-        const normalizedError = normalizeProviderError(candidate.provider.name, error);
-        attempts.push({
-          provider: candidate.provider.name,
-          code: normalizedError.code,
-          status: normalizedError.status,
-          retryable: normalizedError.retryable,
-        });
-
-        this.#events?.emit("provider.failed", {
-          code: normalizedError.code,
-          status: normalizedError.status,
-          retryable: normalizedError.retryable,
-          latencyMs: Date.now() - started,
+          task: normalized.task,
+          retry,
         }, {
           provider: candidate.provider.name,
           model: candidate.model,
           requestId: normalized.metadata?.requestId,
         });
 
-        if (!normalizedError.retryable) {
-          throw normalizedError;
-        }
+        try {
+          const response = await candidate.provider.generate(
+            { ...normalized, model: candidate.model },
+            { timeoutMs: candidate.health.timeoutMs }
+          );
 
-        this.#events?.emit("provider.retry", {
-          nextCandidate: true,
-          reason: normalizedError.code,
-        }, {
-          provider: candidate.provider.name,
-          model: candidate.model,
-          requestId: normalized.metadata?.requestId,
+          this.#events?.emit("provider.completed", {
+            latencyMs: Date.now() - started,
+            usage: response.usage ?? null,
+          }, {
+            provider: candidate.provider.name,
+            model: response.model ?? candidate.model,
+            requestId: normalized.metadata?.requestId,
           });
-          await new Promise((resolve) => setTimeout(resolve, delayMs));
+
+          return {
+            ...response,
+            provider: response.provider ?? candidate.provider.name,
+            model: response.model ?? candidate.model,
+          };
+        } catch (error) {
+          const normalizedError = normalizeProviderError(candidate.provider.name, error);
+
+          attempts.push({
+            provider: candidate.provider.name,
+            retry,
+            code: normalizedError.code,
+            status: normalizedError.status,
+            retryable: normalizedError.retryable,
+          });
+
+          this.#events?.emit("provider.failed", {
+            code: normalizedError.code,
+            status: normalizedError.status,
+            retryable: normalizedError.retryable,
+            retry,
+            latencyMs: Date.now() - started,
+          }, {
+            provider: candidate.provider.name,
+            model: candidate.model,
+            requestId: normalized.metadata?.requestId,
+          });
+
+          if (!normalizedError.retryable || retry >= maxRetries) {
+            break;
+          }
+
+          const delayMs = retryDelay * (2 ** retry);
+          this.#events?.emit("provider.retry", {
+            delayMs,
+            nextRetry: retry + 1,
+            reason: normalizedError.code,
+          }, {
+            provider: candidate.provider.name,
+            model: candidate.model,
+            requestId: normalized.metadata?.requestId,
+          });
+
+          await sleep(delayMs);
         }
       }
     }
@@ -185,6 +219,7 @@ export class ModelRouter {
 
     for (const candidate of candidates) {
       if (!candidate.health.available) continue;
+
       try {
         return candidate.provider.stream(
           { ...normalized, model: candidate.model },
@@ -192,7 +227,11 @@ export class ModelRouter {
         );
       } catch (error) {
         const normalizedError = normalizeProviderError(candidate.provider.name, error);
-        attempts.push({ provider: candidate.provider.name, code: normalizedError.code, retryable: normalizedError.retryable });
+        attempts.push({
+          provider: candidate.provider.name,
+          code: normalizedError.code,
+          retryable: normalizedError.retryable,
+        });
         if (!normalizedError.retryable) throw normalizedError;
       }
     }
