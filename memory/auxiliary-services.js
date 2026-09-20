@@ -128,8 +128,8 @@ export class MediaMetadataService {
 }
 
 export class ModelProviderMetadataService {
-  #client; #quota;
-  constructor({ client, quota }) { this.#client = client; this.#quota = quota; }
+  #client; #quota; #ledger;
+  constructor({ client, quota, ledger }) { this.#client = client; this.#quota = quota; this.#ledger = ledger; }
 
   async record(scope, input) {
     assertScope(scope);
@@ -138,11 +138,38 @@ export class ModelProviderMetadataService {
     const now = new Date().toISOString();
     const metadata = input.metadata ?? {};
     const sizeBytes = byteSize({ id, provider: input.provider, model: input.model, metadata, now });
-    await this.#quota.assertWithinQuota(scope, sizeBytes, { category: "other" });
-    await this.#client.execute({
+    const tx = await this.#client.transaction("write");
+    try {
+      await this.#quota.assertWithinQuota(scope, sizeBytes, { category: "other", executor: tx });
+      await tx.execute({
       sql: "INSERT INTO model_provider_metadata (id, tenant_id, user_id, provider, model, metadata_json, observed_at, created_at, size_bytes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
       args: [id, scope.tenantId, scope.userId, input.provider, input.model, toJson(metadata), input.observedAt ?? now, now, sizeBytes],
     });
+    await this.#ledger.appendInTransaction(tx, scope, {
+      eventType: "provider_used",
+      actorType: input.actorType ?? "system",
+      actorId: input.actorId ?? null,
+      objectId: id,
+      objectVersion: 1,
+      payload: { provider: input.provider, model: input.model, metadata },
+      provider: input.provider,
+      model: input.model,
+    });
+    await this.#ledger.appendInTransaction(tx, scope, {
+      eventType: "model_used",
+      actorType: input.actorType ?? "system",
+      actorId: input.actorId ?? null,
+      objectId: id,
+      objectVersion: 1,
+      payload: { provider: input.provider, model: input.model },
+      provider: input.provider,
+      model: input.model,
+    });
+    await tx.commit();
     return { id, provider: input.provider, model: input.model, metadata, observedAt: input.observedAt ?? now, sizeBytes };
+    } catch (error) {
+      await tx.rollback();
+      throw error;
+    }
   }
 }
