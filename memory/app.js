@@ -116,6 +116,7 @@ export function createJuniMemoryApplication({ config, events, embedder = null } 
   const modelMetadata = new ModelProviderMetadataService({
     client: db.client,
     quota,
+    ledger,
   });
 
   const learning = new LearningPipeline({
