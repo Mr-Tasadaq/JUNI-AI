@@ -61,4 +61,4 @@ The router can retry and/or fall back without exposing vendor-specific error pay
 
 ## Realtime voice
 
-Gemini Live is server-side by design in this foundation. The Live API uses stateful WebSocket sessions and supports realtime audio/video input and native audio output. Client microphone access should be introduced later with a secure session/ephemeral-token design rather than shipping a persistent Gemini API key to the browser. citeturn738010search0turn738010search1
+Gemini Live is server-side by design in this foundation. The Live API uses stateful WebSocket sessions and supports realtime audio/video input and native audio output. Client microphone access should be introduced later with a secure session/ephemeral-token design rather than shipping a persistent Gemini API key to the browser.
