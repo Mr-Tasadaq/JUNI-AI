@@ -131,7 +131,7 @@ export class TamperEvidentLedger {
       args: [
         eventId, scope.tenantId, scope.userId, sequence, eventType, occurredAt,
         actorType, actorId, objectId, objectVersion, canonicalJson(safePayload),
-        payloadHash, previousHash, currentHash, sourceHash, provider, model,
+        payloadHash, previousHash, currentHash, sourceHash, provider, model, ledgerSizeBytes,
       ],
     });
 
