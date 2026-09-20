@@ -56,7 +56,7 @@ export class KnowledgeService {
     const tx = await this.#client.transaction("write");
     try {
       await this.#quota.assertWithinQuota(scope, record.size_bytes, { category: "memory", executor: tx });
-      if (input.source) {
+      if (input.source && !record.provenance_ref) {
         const provenance = await this.#provenance.createInTransaction(tx, scope, {
           subjectId: id,
           sourceType: input.source.type ?? record.source_type,
@@ -213,7 +213,7 @@ export class KnowledgeService {
 
     const tx = await this.#client.transaction("write");
     try {
-      const delta = record.size_bytes + byteSize({ id, version, contentJson, checksum }) - Number(existing.size_bytes);
+      const delta = record.size_bytes - Number(existing.size_bytes);
       await this.#quota.assertWithinQuota(scope, delta, { category: "memory", executor: tx });
 
       await tx.execute({
