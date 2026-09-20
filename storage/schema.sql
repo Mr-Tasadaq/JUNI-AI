@@ -342,6 +342,7 @@ CREATE TABLE IF NOT EXISTS ledger_events (
   source_hash TEXT,
   provider TEXT,
   model TEXT,
+  size_bytes INTEGER NOT NULL,
   UNIQUE (tenant_id, sequence)
 );
 CREATE INDEX IF NOT EXISTS idx_ledger_scope_sequence
