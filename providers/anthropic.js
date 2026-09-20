@@ -1,4 +1,4 @@
-import asyncLoadAnthropic() {
+async function asyncLoadAnthropic() {
   const module = await import("@anthropic-ai/sdk");
   return module.default;
 }
