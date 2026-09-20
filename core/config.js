@@ -92,7 +92,7 @@ export function loadConfig(env = process.env) {
       maxEventPayloadBytes: intOrDefault(env.JUNI_MAX_EVENT_PAYLOAD_BYTES, 8_192, 256),
     },
     provenance: {
-      storageBudgetBytes: intOrDefault(env.JUNI_STORAGE_BUDGET_BYTES, 10_000_000_000, 1),
+      storageBudgetBytes: intOrDefault(env.JUNI_STORAGE_BUDGET_BYTES, 10 * 1024 * 1024 * 1024, 1),
     },
   });
 }
