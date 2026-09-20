@@ -1,17 +1,20 @@
 {
   "name": "juni-ai",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
-  "description": "JUNI-AI responsive assistant with a secure server-side OpenAI integration.",
+  "description": "JUNI-AI multi-provider AI agent foundation.",
   "scripts": {
     "test": "node --test",
+    "check": "node --check app.js && node --check api/chat.js",
     "dev": "npx serve ."
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "0.127.0",
+    "@google/genai": "2.23.0",
     "openai": "7.20.0"
   }
 }
