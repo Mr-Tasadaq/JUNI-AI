@@ -153,7 +153,7 @@ export function createAnthropicProvider(config, { identity } = {}) {
           system: identity,
           messages: toAnthropicMessages(request.messages),
           tools: toAnthropicTools(request.tools),
-        });
+        }, { signal: timed.signal });
 
         for await (const event of stream) {
           if (event.type === "content_block_delta" && event.delta?.type === "text_delta") {
