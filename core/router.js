@@ -58,7 +58,6 @@ export class ModelRouter {
     }
 
     const normalized = normalizeRequest(request, {
-      provider: this.#config.app.defaultProvider,
       model: this.#config.app.defaultModel,
     });
 
