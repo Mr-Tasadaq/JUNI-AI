@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="JUNI-AI — a clean, responsive AI assistant interface.">
+  <meta name="theme-color" content="#0b0f19">
+  <title>JUNI-AI</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar" aria-label="Conversation sidebar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">J</div>
+        <div>
+          <strong>JUNI-AI</strong>
+          <span>AI assistant</span>
+        </div>
+      </div>
+
+      <button class="new-chat-button" id="newChatButton" type="button">
+        <span aria-hidden="true">+</span>
+        New chat
+      </button>
+
+      <div class="sidebar-section">
+        <div class="section-heading">
+          <span>Recent chats</span>
+          <button class="icon-button small" id="clearHistoryButton" type="button" aria-label="Clear recent chats" title="Clear recent chats">⌫</button>
+        </div>
+        <div class="history-list" id="historyList" aria-live="polite"></div>
+      </div>
+
+      <div class="sidebar-footer">
+        <button class="sidebar-action" id="exportButton" type="button">
+          <span aria-hidden="true">↥</span> Export chat
+        </button>
+        <button class="sidebar-action" id="themeButton" type="button">
+          <span aria-hidden="true" id="themeIcon">☾</span> Toggle theme
+        </button>
+        <p>Demo mode is enabled until a server API is connected.</p>
+      </div>
+    </aside>
+
+    <main class="main-panel">
+      <header class="topbar">
+        <button class="icon-button mobile-only" id="menuButton" type="button" aria-label="Open sidebar" title="Open sidebar">☰</button>
+        <div>
+          <span class="eyebrow">JUNI-AI</span>
+          <h1>Your ideas, in conversation.</h1>
+        </div>
+        <div class="status-pill"><span class="status-dot"></span> Ready</div>
+      </header>
+
+      <section class="chat-wrap" aria-label="Chat">
+        <div class="welcome-card" id="welcomeCard">
+          <div class="welcome-icon">✦</div>
+          <p class="eyebrow">WELCOME</p>
+          <h2>What can I help you build?</h2>
+          <p>Ask a question, draft something, plan a project, or use one of the starters below.</p>
+          <div class="starter-grid">
+            <button class="starter-card" type="button" data-prompt="Create a simple project plan for launching a new website.">
+              <span>↗</span>
+              <strong>Project plan</strong>
+              <small>Turn an idea into clear next steps.</small>
+            </button>
+            <button class="starter-card" type="button" data-prompt="Explain a difficult technical topic in simple language.">
+              <span>?</span>
+              <strong>Explain simply</strong>
+              <small>Make complex ideas easier to understand.</small>
+            </button>
+            <button class="starter-card" type="button" data-prompt="Write a professional email asking for an update.">
+              <span>✎</span>
+              <strong>Write an email</strong>
+              <small>Start with a polished first draft.</small>
+            </button>
+            <button class="starter-card" type="button" data-prompt="Give me five creative ideas for a small app I could build.">
+              <span>✦</span>
+              <strong>Brainstorm</strong>
+              <small>Generate focused, practical ideas.</small>
+            </button>
+          </div>
+        </div>
+
+        <div class="messages" id="messages" aria-live="polite"></div>
+      </section>
+
+      <form class="composer" id="composer">
+        <div class="composer-inner">
+          <textarea id="messageInput" rows="1" maxlength="4000" placeholder="Message JUNI-AI…" aria-label="Message JUNI-AI"></textarea>
+          <button class="send-button" id="sendButton" type="submit" aria-label="Send message" title="Send message">
+            <span>↑</span>
+          </button>
+        </div>
+        <div class="composer-meta">
+          <span>Enter to send · Shift + Enter for a new line</span>
+          <span id="charCount">0 / 4000</span>
+        </div>
+      </form>
+    </main>
+  </div>
+
+  <script src="app.js" defer></script>
+</body>
+</html>
