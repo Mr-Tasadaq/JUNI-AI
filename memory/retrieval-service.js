@@ -49,10 +49,18 @@ export class MemoryRetrievalService {
   async relevantKnowledge(scope, queryVector, options = {}) {
     assertScope(scope);
     if (queryVector) {
-      return this.#vectors.search(scope, queryVector, {
+      const results = await this.#vectors.search(scope, queryVector, {
         ...options,
         objectType: "knowledge",
       });
+      const visible = [];
+      for (const item of results) {
+        const record = await this.#knowledge.get(scope, item.objectId);
+        if (!record) continue;
+        if (!options.includeCandidates && !["important", "permanent"].includes(record.status)) continue;
+        visible.push({ ...item, status: record.status, source: record.source_type });
+      }
+      return visible;
     }
 
     const text = String(options.queryText ?? "").trim();
