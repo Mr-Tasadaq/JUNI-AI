@@ -1,4 +1,4 @@
-import asyncLoadOpenAI() {
+async function asyncLoadOpenAI() {
   const module = await import("openai");
   return module.default;
 }
