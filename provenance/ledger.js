@@ -51,9 +51,11 @@ function buildHashInput(event) {
 
 export class TamperEvidentLedger {
   #client;
+  #quota;
 
-  constructor({ client }) {
+  constructor({ client, quota = null }) {
     this.#client = client;
+    this.#quota = quota;
   }
 
   async appendInTransaction(tx, scope, {
@@ -112,13 +114,20 @@ export class TamperEvidentLedger {
     };
 
     const currentHash = hashString(canonicalJson(buildHashInput(event)));
+    const ledgerSizeBytes = byteSize({ ...event, payload: safePayload, currentHash });
+    const auditBytes = byteSize({ eventId, eventType, objectId, actorType, actorId, occurredAt });
+
+    if (this.#quota) {
+      await this.#quota.assertWithinQuota(scope, ledgerSizeBytes, { category: "provenance", executor: tx });
+      await this.#quota.assertWithinQuota(scope, auditBytes, { category: "logs", executor: tx });
+    }
 
     await tx.execute({
       sql: `INSERT INTO ledger_events (
         event_id, tenant_id, user_id, sequence, event_type, occurred_at,
         actor_type, actor_id, object_id, object_version, payload_json,
-        payload_hash, previous_hash, current_hash, source_hash, provider, model
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        payload_hash, previous_hash, current_hash, source_hash, provider, model, size_bytes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         eventId, scope.tenantId, scope.userId, sequence, eventType, occurredAt,
         actorType, actorId, objectId, objectVersion, canonicalJson(safePayload),
@@ -244,6 +253,13 @@ export class TamperEvidentLedger {
         model: row.model,
       };
       const expectedCurrent = hashString(canonicalJson(rebuilt));
+      if (!row.previous_hash) {
+        issues.push({
+          type: "missing_previous_hash",
+          eventId: row.event_id,
+        });
+      }
+
       if (row.current_hash !== expectedCurrent) {
         issues.push({
           type: "current_hash_mismatch",
