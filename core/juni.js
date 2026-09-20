@@ -35,6 +35,16 @@ export class JuniCore {
     let providerOverride = normalized.provider;
     let messages = [...normalized.messages];
 
+    const maxHistory = this.#config.security.maxHistory;
+    if (messages.length > maxHistory) {
+      messages = messages.slice(-maxHistory);
+    }
+
+    const lastMessage = messages.at(-1);
+    if (lastMessage?.role === "user" && lastMessage.content === request.message) {
+      messages.pop();
+    }
+
     this.#events?.emit("request.started", {
       task: normalized.task,
       modality: normalized.modality,
@@ -181,6 +191,18 @@ export class JuniCore {
       model: provider.defaultModel,
       latencyClass: provider.latencyClass ?? "balanced",
     }));
+  }
+
+  async providerHealth() {
+    const providers = await Promise.all(
+      this.#router.listProviders().map(async (provider) => ({
+        name: provider.name,
+        model: provider.defaultModel,
+        ...(await provider.health({ model: provider.defaultModel })),
+      }))
+    );
+
+    return providers;
   }
 }
 
