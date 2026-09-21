@@ -21,6 +21,12 @@ export const LEDGER_EVENT_TYPES = Object.freeze([
   "provider_used",
   "user_correction",
   "audit_event",
+  "answer_candidate_created",
+  "answer_cache_hit",
+  "answer_cache_miss",
+  "answer_indexed",
+  "answer_approved",
+  "answer_rejected",
 ]);
 
 const GENESIS_HASH = "GENESIS";
