@@ -31,6 +31,7 @@ export class VoiceClient {
   #captionEnabled = false;
   #startedAt = 0;
   #goAway = false;
+  #bargeStart = 0;
   #muted = false;
   #onState;
   #onCaption;
