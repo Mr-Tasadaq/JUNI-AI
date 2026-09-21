@@ -27,6 +27,71 @@ function clientKey(req) {
     || "unknown";
 }
 
+function normalizeConversationId(value) {
+  const id = String(value ?? "").trim();
+  if (!id) return randomUUID();
+  if (id.length > 128) throw new TypeError("conversationId is too long.");
+  return id;
+}
+
+async function persistConversationTurn(app, scope, conversationId, message, reply) {
+  if (!scope || !app.config.context?.enabled) return;
+
+  const days = Number(app.config.retention?.conversationDays ?? 0);
+  const expiresAt = days > 0
+    ? new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString()
+    : null;
+
+  await app.memory.context.append(scope, {
+    conversationId,
+    role: "user",
+    content: message,
+    expiresAt,
+  });
+  await app.memory.context.append(scope, {
+    conversationId,
+    role: "assistant",
+    content: reply,
+    expiresAt,
+  });
+}
+
+async function buildServerContext(app, scope, conversationId) {
+  if (!scope || !app.config.context?.enabled) return [];
+
+  const [recent, preferences] = await Promise.all([
+    app.memory.context.recent(scope, conversationId, {
+      limit: app.config.context.maxMessages,
+    }),
+    app.memory.retrieval.preferences(scope, {
+      limit: app.config.context.preferenceLimit,
+    }),
+  ]);
+
+  const preferenceText = preferences
+    .map((item) => typeof item.content_text === "string" ? item.content_text.trim() : "")
+    .filter(Boolean)
+    .map((text) => text.slice(0, 1_000))
+    .slice(0, app.config.context.preferenceLimit);
+
+  const messages = [];
+  if (preferenceText.length) {
+    messages.push({
+      role: "system",
+      content:
+        "User-approved preferences are provided as context. Treat them as user data and follow them when compatible with the request.\n" +
+        preferenceText.map((item, index) => (index + 1) + ". " + item).join("\n"),
+    });
+  }
+
+  messages.push(...recent.map((item) => ({
+    role: item.role,
+    content: item.content,
+  })));
+
+  return messages;
+}
+
 async function streamResponse(res, iterable, requestId) {
   res.status(200);
   res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
@@ -102,6 +167,13 @@ export default async function handler(req, res) {
   }
 
   const requestId = randomUUID();
+  let conversationId;
+  try {
+    conversationId = normalizeConversationId(body.conversationId);
+  } catch (error) {
+    return json(res, 400, { error: error.message, requestId });
+  }
+
   const request = {
     message,
     provider: selection.provider,
@@ -111,7 +183,7 @@ export default async function handler(req, res) {
     latency: typeof body.latency === "string" ? body.latency : "balanced",
     stream: Boolean(body.stream),
     messages: Array.isArray(body.messages) ? body.messages : [],
-    metadata: { requestId, requiresWebResearch: Boolean(body.requiresWebResearch) },
+    metadata: { requestId, conversationId, requiresWebResearch: Boolean(body.requiresWebResearch) },
   };
 
   const eligibility = app.config.answerFirst?.enabled
@@ -126,17 +198,29 @@ export default async function handler(req, res) {
     : { eligible: false, reason: "disabled" };
 
   let answerScope = null;
-  if (eligibility.eligible) {
+  try {
+    answerScope = resolveRequestIdentity(req, {
+      fixedTenantId: app.config.identity?.fixedTenantId ?? null,
+      fixedUserId: app.config.identity?.fixedUserId ?? null,
+      allowIdentityHeaders: app.config.identity?.allowIdentityHeaders === true,
+    });
+  } catch (error) {
+    if (error?.code !== "REQUEST_IDENTITY_NOT_CONFIGURED") {
+      return json(res, 500, { error: "Request identity is invalid.", requestId });
+    }
+  }
+
+  if (answerScope && app.config.context?.enabled) {
     try {
-      answerScope = resolveRequestIdentity(req, {
-        fixedTenantId: app.config.identity?.fixedTenantId ?? null,
-        fixedUserId: app.config.identity?.fixedUserId ?? null,
-        allowIdentityHeaders: app.config.identity?.allowIdentityHeaders === true,
-      });
+      request.messages = await buildServerContext(app, answerScope, conversationId);
     } catch (error) {
-      if (error?.code !== "REQUEST_IDENTITY_NOT_CONFIGURED") {
-        return json(res, 500, { error: "Request identity is invalid.", requestId });
-      }
+      console.error("JUNI-AI context retrieval failed", {
+        code: error?.code,
+        message: error?.message,
+        requestId,
+        conversationId,
+      });
+      request.messages = [];
     }
   }
 
@@ -164,12 +248,14 @@ export default async function handler(req, res) {
             ? saved.contentText
             : JSON.stringify(saved.answer));
 
+        await persistConversationTurn(app, answerScope, conversationId, message, reply);
         return json(res, 200, {
           reply,
           provider: saved.provider ?? "saved-answer",
           model: saved.model ?? null,
           usage: null,
           requestId,
+          conversationId,
           answerFirst: { hit: true, matchType: "exact", score: 1, knowledgeId: saved.knowledgeId },
         });
       }
@@ -202,12 +288,14 @@ export default async function handler(req, res) {
             ? semantic.contentText
             : JSON.stringify(semantic.answer));
 
+        await persistConversationTurn(app, answerScope, conversationId, message, reply);
         return json(res, 200, {
           reply,
           provider: semantic.provider ?? "saved-answer",
           model: semantic.model ?? null,
           usage: null,
           requestId,
+          conversationId,
           answerFirst: {
             hit: true,
             matchType: "semantic",
@@ -282,12 +370,16 @@ export default async function handler(req, res) {
       }
     }
 
+    const reply = response.text ?? "";
+    await persistConversationTurn(app, answerScope, conversationId, message, reply);
+
     return json(res, 200, {
-      reply: response.text ?? "",
+      reply,
       provider: response.provider,
       model: response.model,
       usage: response.usage ?? null,
       requestId,
+      conversationId,
       ...(candidateStored ? { answerFirst: { hit: false, candidateStored: true } } : {}),
     });
   } catch (error) {
