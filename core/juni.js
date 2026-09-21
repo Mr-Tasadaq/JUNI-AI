@@ -3,8 +3,8 @@ import { normalizeRequest } from "./provider.js";
 import { RouterError } from "./errors.js";
 import { buildSystemIdentity } from "./identity.js";
 
-function toolDefinitions(registry) {
-  return registry ? registry.getProviderDefinitions() : [];
+function toolDefinitions(registry, enabled = true) {
+  return enabled && registry ? registry.getProviderDefinitions() : [];
 }
 
 function isToolCallResponse(response) {
@@ -57,7 +57,7 @@ export class JuniCore {
           ...normalized,
           provider: providerOverride,
           messages,
-          tools: toolDefinitions(this.#tools),
+          tools: toolDefinitions(this.#tools, this.#config.tools?.enabled !== false && this.#config.app.featureFlags.tools),
           metadata: { ...normalized.metadata, requestId },
         });
 
@@ -102,6 +102,7 @@ export class JuniCore {
               requestId,
               provider: response.provider,
               model: response.model,
+              approved: request.metadata?.toolApproval === true,
             });
 
             messages.push({
@@ -159,7 +160,7 @@ export class JuniCore {
     try {
       const stream = await this.#router.stream({
         ...normalized,
-        tools: toolDefinitions(this.#tools),
+        tools: toolDefinitions(this.#tools, this.#config.tools?.enabled !== false && this.#config.app.featureFlags.tools),
         metadata: { ...normalized.metadata, requestId },
       });
 
