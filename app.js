@@ -18,11 +18,29 @@ const elements = {
   menuButton: document.querySelector("#menuButton"),
   researchToggle: document.querySelector("#researchToggle"),
   researchHint: document.querySelector("#researchHint"),
+  attachButton: document.querySelector("#attachButton"),
+  imageInput: document.querySelector("#imageInput"),
+  attachmentList: document.querySelector("#attachmentList"),
+  voiceButton: document.querySelector("#voiceButton"),
+  voiceStatus: document.querySelector("#voiceStatus"),
 };
 
 let chats = loadChats();
 let activeChatId = chats[0]?.id ?? null;
 let isGenerating = false;
+let pendingImages = [];
+const voiceState = {
+  socket: null,
+  mediaStream: null,
+  audioContext: null,
+  source: null,
+  processor: null,
+  muteGain: null,
+  playbackTime: 0,
+  userTranscript: "",
+  assistantTranscript: "",
+  closing: false,
+};
 
 if (!activeChatId) {
   activeChatId = createChat();
@@ -76,6 +94,10 @@ elements.clearHistory.addEventListener("click", () => {
 elements.exportButton.addEventListener("click", exportActiveChat);
 
 elements.accessCodeButton.addEventListener("click", setAccessCode);
+
+elements.attachButton?.addEventListener("click", () => elements.imageInput?.click());
+elements.imageInput?.addEventListener("change", handleImageSelection);
+elements.voiceButton?.addEventListener("click", toggleVoice);
 
 elements.themeButton.addEventListener("click", () => {
   const nextTheme = document.documentElement.dataset.theme === "light" ? "dark" : "light";
@@ -247,7 +269,11 @@ async function sendMessage() {
   updateComposerState();
 
   try {
-    const response = await requestAssistant(text, chat.messages, researchEnabled);
+    const attachmentsForRequest = pendingImages.slice();
+  pendingImages = [];
+  renderAttachmentList();
+
+  const response = await requestAssistant(text, chat.messages, researchEnabled, true, attachmentsForRequest);
     chat.messages.push({
       role: "assistant",
       content: response.reply,
@@ -269,7 +295,7 @@ async function sendMessage() {
   }
 }
 
-async function requestAssistant(text, history, researchEnabled = false, allowAuthRetry = true) {
+async function requestAssistant(text, history, researchEnabled = false, allowAuthRetry = true, attachments = []) {
   const payload = researchEnabled
     ? {
         action: "research",
@@ -282,6 +308,7 @@ async function requestAssistant(text, history, researchEnabled = false, allowAut
         message: text,
         messages: history.slice(0, -1),
         conversationId: activeConversationId(),
+        attachments,
       };
 
   try {
@@ -332,6 +359,309 @@ async function requestAssistant(text, history, researchEnabled = false, allowAut
       research: null,
     };
   }
+}
+
+function renderAttachmentList() {
+  if (!elements.attachmentList) return;
+  elements.attachmentList.replaceChildren();
+  elements.attachmentList.hidden = pendingImages.length === 0;
+
+  pendingImages.forEach((image, index) => {
+    const item = document.createElement("span");
+    item.className = "attachment-chip";
+    item.textContent = image.name || image.mimeType;
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "attachment-remove";
+    remove.setAttribute("aria-label", "Remove " + (image.name || "image"));
+    remove.textContent = "×";
+    remove.addEventListener("click", () => {
+      pendingImages.splice(index, 1);
+      renderAttachmentList();
+    });
+
+    item.append(remove);
+    elements.attachmentList.append(item);
+  });
+}
+
+async function handleImageSelection(event) {
+  const files = [...(event.target.files || [])];
+  event.target.value = "";
+
+  if (!files.length) return;
+
+  const allowed = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+  const maxBytes = 2 * 1024 * 1024;
+
+  for (const file of files) {
+    if (pendingImages.length >= 4) break;
+    if (!allowed.has(file.type) || file.size <= 0 || file.size > maxBytes) continue;
+
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(reader.error || new Error("Could not read image."));
+      reader.readAsDataURL(file);
+    });
+
+    const comma = dataUrl.indexOf(",");
+    if (comma < 0) continue;
+
+    pendingImages.push({
+      name: file.name,
+      mimeType: file.type,
+      data: dataUrl.slice(comma + 1),
+    });
+  }
+
+  renderAttachmentList();
+}
+
+function setVoiceStatus(message, visible = true) {
+  if (!elements.voiceStatus) return;
+  elements.voiceStatus.hidden = !visible;
+  elements.voiceStatus.textContent = message;
+}
+
+function toggleVoice() {
+  if (voiceState.socket && voiceState.socket.readyState <= WebSocket.OPEN) {
+    stopVoice();
+  } else {
+    startVoice();
+  }
+}
+
+async function startVoice() {
+  if (!navigator.mediaDevices?.getUserMedia || typeof WebSocket === "undefined") {
+    setVoiceStatus("This browser does not support secure voice chat.", true);
+    return;
+  }
+
+  try {
+    setVoiceStatus("Creating a secure voice session…", true);
+    elements.voiceButton.disabled = true;
+
+    const tokenResponse = await fetch("/api/voice-token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: "{}",
+    });
+
+    if (!tokenResponse.ok) {
+      let message = "Voice session could not be created.";
+      try {
+        const data = await tokenResponse.json();
+        if (typeof data?.error === "string") message = data.error;
+      } catch {}
+      throw new Error(message);
+    }
+
+    const session = await tokenResponse.json();
+    const socket = new WebSocket(session.websocketUrl);
+    voiceState.socket = socket;
+    voiceState.closing = false;
+    voiceState.userTranscript = "";
+    voiceState.assistantTranscript = "";
+    voiceState.playbackTime = 0;
+
+    socket.onopen = async () => {
+      socket.send(JSON.stringify({
+        setup: {
+          model: "models/" + session.model,
+          responseModalities: ["AUDIO"],
+          inputAudioTranscription: {},
+          outputAudioTranscription: {},
+          sessionResumption: {},
+          systemInstruction: {
+            parts: [{ text: "You are JUNI-AI. Be helpful, concise, and explicit about uncertainty." }],
+          },
+        },
+      }));
+
+      await startMicrophoneCapture();
+      elements.voiceButton.disabled = false;
+      elements.voiceButton.textContent = "■";
+      elements.voiceButton.setAttribute("aria-label", "Stop voice chat");
+      setVoiceStatus("Voice chat active · speak naturally", true);
+    };
+
+    socket.onmessage = handleVoiceMessage;
+    socket.onerror = () => {
+      setVoiceStatus("Voice connection error.", true);
+    };
+    socket.onclose = () => {
+      cleanupVoiceResources();
+      if (!voiceState.closing) setVoiceStatus("Voice session closed.", true);
+      elements.voiceButton.disabled = false;
+      elements.voiceButton.textContent = "◉";
+      elements.voiceButton.setAttribute("aria-label", "Start voice chat");
+    };
+  } catch (error) {
+    cleanupVoiceResources();
+    elements.voiceButton.disabled = false;
+    setVoiceStatus(error?.message || "Voice chat could not start.", true);
+  }
+}
+
+async function startMicrophoneCapture() {
+  voiceState.mediaStream = await navigator.mediaDevices.getUserMedia({
+    audio: {
+      channelCount: 1,
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    },
+  });
+
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) throw new Error("AudioContext is not supported.");
+  voiceState.audioContext = new AudioContextClass();
+  await voiceState.audioContext.resume();
+
+  voiceState.source = voiceState.audioContext.createMediaStreamSource(voiceState.mediaStream);
+  voiceState.processor = voiceState.audioContext.createScriptProcessor(4096, 1, 1);
+  voiceState.muteGain = voiceState.audioContext.createGain();
+  voiceState.muteGain.gain.value = 0;
+
+  voiceState.processor.onaudioprocess = (event) => {
+    if (!voiceState.socket || voiceState.socket.readyState !== WebSocket.OPEN) return;
+
+    const input = event.inputBuffer.getChannelData(0);
+    const pcm = downsampleTo16kPcm(input, voiceState.audioContext.sampleRate);
+    if (!pcm.length) return;
+
+    const bytes = new Uint8Array(pcm.buffer);
+    let binary = "";
+    for (let index = 0; index < bytes.length; index += 1) binary += String.fromCharCode(bytes[index]);
+
+    voiceState.socket.send(JSON.stringify({
+      realtimeInput: {
+        audio: {
+          data: btoa(binary),
+          mimeType: "audio/pcm;rate=16000",
+        },
+      },
+    }));
+  };
+
+  voiceState.source.connect(voiceState.processor);
+  voiceState.processor.connect(voiceState.muteGain);
+  voiceState.muteGain.connect(voiceState.audioContext.destination);
+}
+
+function downsampleTo16kPcm(input, sourceRate) {
+  if (sourceRate === 16000) {
+    const pcm = new Int16Array(input.length);
+    for (let i = 0; i < input.length; i += 1) pcm[i] = Math.max(-1, Math.min(1, input[i])) * 0x7fff;
+    return pcm;
+  }
+
+  const ratio = sourceRate / 16000;
+  const outputLength = Math.max(1, Math.round(input.length / ratio));
+  const pcm = new Int16Array(outputLength);
+  for (let i = 0; i < outputLength; i += 1) {
+    const position = Math.min(input.length - 1, Math.round(i * ratio));
+    const sample = Math.max(-1, Math.min(1, input[position]));
+    pcm[i] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+  }
+  return pcm;
+}
+
+function handleVoiceMessage(event) {
+  let response;
+  try {
+    response = JSON.parse(event.data);
+  } catch {
+    return;
+  }
+
+  const content = response.serverContent;
+  if (content?.interimInputTranscription?.text) {
+    setVoiceStatus("You: " + content.interimInputTranscription.text, true);
+  }
+  if (content?.inputTranscription?.text) {
+    voiceState.userTranscript += content.inputTranscription.text;
+    setVoiceStatus("You: " + voiceState.userTranscript.trim(), true);
+  }
+  if (content?.outputTranscription?.text) {
+    voiceState.assistantTranscript += content.outputTranscription.text;
+    setVoiceStatus("JUNI-AI: " + voiceState.assistantTranscript.trim(), true);
+  }
+
+  for (const part of content?.modelTurn?.parts || []) {
+    if (part?.inlineData?.data) {
+      playPcm24k(part.inlineData.data);
+    }
+  }
+
+  if (content?.turnComplete) {
+    const chat = getActiveChat();
+    if (chat) {
+      const userText = voiceState.userTranscript.trim();
+      const assistantText = voiceState.assistantTranscript.trim();
+      if (userText) chat.messages.push({ role: "user", content: userText, createdAt: Date.now() });
+      if (assistantText) chat.messages.push({ role: "assistant", content: assistantText, createdAt: Date.now() });
+      saveChats();
+      render();
+    }
+    voiceState.userTranscript = "";
+    voiceState.assistantTranscript = "";
+  }
+}
+
+function playPcm24k(base64) {
+  if (!voiceState.audioContext) return;
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+
+  const samples = new Int16Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.byteLength / 2));
+  const buffer = voiceState.audioContext.createBuffer(1, samples.length, 24000);
+  const channel = buffer.getChannelData(0);
+  for (let i = 0; i < samples.length; i += 1) channel[i] = samples[i] / 32768;
+
+  const source = voiceState.audioContext.createBufferSource();
+  source.buffer = buffer;
+  source.connect(voiceState.audioContext.destination);
+
+  const now = voiceState.audioContext.currentTime;
+  voiceState.playbackTime = Math.max(now, voiceState.playbackTime);
+  source.start(voiceState.playbackTime);
+  voiceState.playbackTime += buffer.duration;
+}
+
+function stopVoice() {
+  voiceState.closing = true;
+  try {
+    if (voiceState.socket?.readyState === WebSocket.OPEN) {
+      voiceState.socket.send(JSON.stringify({ realtimeInput: { audioStreamEnd: true } }));
+      voiceState.socket.close();
+    }
+  } catch {}
+  cleanupVoiceResources();
+  elements.voiceButton.disabled = false;
+  elements.voiceButton.textContent = "◉";
+  elements.voiceButton.setAttribute("aria-label", "Start voice chat");
+  setVoiceStatus("Voice chat stopped.", true);
+}
+
+function cleanupVoiceResources() {
+  voiceState.processor?.disconnect();
+  voiceState.source?.disconnect();
+  voiceState.muteGain?.disconnect();
+  voiceState.mediaStream?.getTracks().forEach((track) => track.stop());
+  voiceState.audioContext?.close?.();
+
+  voiceState.socket = null;
+  voiceState.processor = null;
+  voiceState.source = null;
+  voiceState.muteGain = null;
+  voiceState.mediaStream = null;
+  voiceState.audioContext = null;
+  voiceState.playbackTime = 0;
 }
 
 async function authenticateWithAccessCode(token) {
