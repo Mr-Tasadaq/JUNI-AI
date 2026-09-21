@@ -129,6 +129,10 @@ elements.voiceButton?.addEventListener("click", toggleVoice);
 elements.authForm?.addEventListener("submit", handleAuthSubmit);
 elements.authCancelButton?.addEventListener("click", closeAuthGate);
 
+document.querySelectorAll("[data-dashboard-action]").forEach((button) => {
+  button.addEventListener("click", () => handleDashboardAction(button.dataset.dashboardAction));
+});
+
 elements.themeButton.addEventListener("click", () => {
   const nextTheme = document.documentElement.dataset.theme === "light" ? "dark" : "light";
   setTheme(nextTheme);
@@ -137,6 +141,38 @@ elements.themeButton.addEventListener("click", () => {
 elements.menuButton.addEventListener("click", () => {
   document.body.classList.toggle("sidebar-open");
 });
+
+function handleDashboardAction(action) {
+  switch (action) {
+    case "new-chat":
+      activeChatId = createChat();
+      render();
+      elements.input.focus();
+      break;
+    case "research":
+      if (elements.researchToggle) {
+        elements.researchToggle.checked = true;
+        elements.researchToggle.dispatchEvent(new Event("change"));
+      }
+      elements.input.focus();
+      break;
+    case "voice":
+      toggleVoice();
+      break;
+    case "saved-answers":
+      openAnswerReview();
+      break;
+    case "chat":
+      if (elements.researchToggle) {
+        elements.researchToggle.checked = false;
+        elements.researchToggle.dispatchEvent(new Event("change"));
+      }
+      elements.input.focus();
+      break;
+    default:
+      break;
+  }
+}
 
 function startStartupSequence() {
   const screen = document.querySelector("#startupScreen");
