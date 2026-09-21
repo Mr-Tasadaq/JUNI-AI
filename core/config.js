@@ -28,8 +28,52 @@ function parseJsonObject(value, fallback = {}) {
   }
 }
 
+function parseJsonArrayMap(value, fallback = {}) {
+  const parsed = parseJsonObject(value, null);
+  if (!parsed) return fallback;
+
+  const result = {};
+  for (const [key, models] of Object.entries(parsed)) {
+    if (!Array.isArray(models)) continue;
+    const normalized = models
+      .filter((model) => typeof model === "string")
+      .map((model) => model.trim())
+      .filter(Boolean);
+    if (normalized.length) result[key] = [...new Set(normalized)];
+  }
+  return result;
+}
+
 function splitCsv(value) {
   return String(value ?? "").split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+function buildRequestAllowlist(providers, env) {
+  const configuredProviders = Object.keys(providers);
+  const requestedProviders = env.JUNI_REQUEST_ALLOWED_PROVIDERS == null
+    ? configuredProviders
+    : splitCsv(env.JUNI_REQUEST_ALLOWED_PROVIDERS);
+
+  const allowedProviders = [...new Set(
+    requestedProviders.filter((name) => configuredProviders.includes(name))
+  )];
+
+  const explicitModels = parseJsonArrayMap(env.JUNI_REQUEST_ALLOWED_MODELS_JSON);
+  const modelsByProvider = Object.fromEntries(
+    allowedProviders.map((provider) => {
+      const configuredModel = providers[provider].defaultModel;
+      const explicit = explicitModels[provider] ?? [];
+      const models = configuredModel
+        ? [configuredModel, ...explicit]
+        : explicit;
+      return [provider, Object.freeze([...new Set(models)])];
+    })
+  );
+
+  return Object.freeze({
+    providers: Object.freeze(allowedProviders),
+    modelsByProvider: Object.freeze(modelsByProvider),
+  });
 }
 
 export function loadConfig(env = process.env) {
@@ -94,12 +138,12 @@ export function loadConfig(env = process.env) {
       memoryDays: intOrDefault(env.JUNI_RETENTION_MEMORY_DAYS, 0, 0),
       researchDays: intOrDefault(env.JUNI_RETENTION_RESEARCH_DAYS, 30, 0),
     },
-    providers,
     security: {
       apiToken: stringOrUndefined(env.JUNI_API_TOKEN),
       allowedOrigin: stringOrUndefined(env.JUNI_ALLOWED_ORIGIN),
       maxMessageLength: intOrDefault(env.JUNI_MAX_MESSAGE_LENGTH, 4_000, 1),
       maxHistory: intOrDefault(env.JUNI_MAX_HISTORY, 20, 1),
+      requestAllowlist: buildRequestAllowlist(providers, env),
     },
     research: {
       enabled: boolOrDefault(env.JUNI_FEATURE_WEB_RESEARCH, false),
