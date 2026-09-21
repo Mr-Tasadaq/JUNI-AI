@@ -22,7 +22,7 @@ export class ResearchOrchestrator {
     const session=await this.#storage.startSession(scope,{...request,sessionId:input.sessionId,retentionExpiresAt:new Date(Date.now()+this.#config.retention.researchDays*86_400_000).toISOString()});
     const started=Date.now();
     this.#events?.emit("research.started",{sessionId:session.id,mode:request.mode,query:request.query},{requestId:request.requestId});
-    const warnings=[];const errors=[];const allSources=[];const native=[];
+    const warnings=[];const errors=[];const allSources=[];const native=[];const searchQueriesIssued=[];let totalRetrievedBytes=0;
     const seenUrls=new Map(); let searchCalls=0; let retrievalCount=0; let cacheHits=0;
     try {
       if(request.urls.length){
@@ -41,7 +41,8 @@ export class ResearchOrchestrator {
               searchCalls+=1;
               await this.#cache.set(scope,cacheKey,result,{sourceRef:"search:"+query});
             }
-            if(result?.searchQueries?.length) await this.#storage.addOperation(scope,{sessionId:session.id,operationType:"search",query,status:"completed",provider:result.provider,model:result.model,cacheHit:cached.hit,usage:result.usage??{},metadata:{searchQueries:result.searchQueries}});
+            if(result?.searchQueries?.length) searchQueriesIssued.push(...result.searchQueries);
+            await this.#storage.addOperation(scope,{sessionId:session.id,operationType:"search",query,status:"completed",provider:result?.provider??null,model:result?.model??null,cacheHit:cached.hit,usage:result?.usage??{},metadata:{searchQueries:result?.searchQueries??[]}});
             const nativeCitations=Array.isArray(result?.nativeCitations)?result.nativeCitations:[];native.push(...nativeCitations);
             const raws=Array.isArray(result?.sources)?result.sources:[];
             for(const raw of raws.slice(0,request.maxSources)){
@@ -49,11 +50,15 @@ export class ResearchOrchestrator {
               const source=normalizeSearchSource(raw,{provider:result.provider,tool:"web.search",sessionId:session.id});
               if(!source||seenUrls.has(source.canonicalUrl)) continue;
               try{
+                const estimatedBytes=Buffer.byteLength(String(source.content??""),"utf8");
+                if(totalRetrievedBytes+estimatedBytes>request.maxRetrievedBytes) break;
                 const retrieved=await this.#retrieveSource(scope,session.id,request,source);
                 if(!retrieved) continue;
                 const near=allSources.find((candidate)=>nearDuplicateSimilarity(candidate.content,retrieved.content)>=0.9);
                 if(near){seenUrls.set(retrieved.canonicalUrl,near.id);continue;}
-                allSources.push(retrieved);seenUrls.set(retrieved.canonicalUrl,retrieved.id);retrievalCount+=1;
+                const fetchedBytes=Buffer.byteLength(String(retrieved.content??""),"utf8");
+                if(totalRetrievedBytes+fetchedBytes>request.maxRetrievedBytes) break;
+                allSources.push(retrieved);seenUrls.set(retrieved.canonicalUrl,retrieved.id);retrievalCount+=1;totalRetrievedBytes+=fetchedBytes;
               }catch(error){errors.push({operation:"retrieve",url:source.url,code:error.code??"RETRIEVAL_FAILED"});}
               if(allSources.length>=request.maxSources) break;
             }
@@ -90,7 +95,7 @@ export class ResearchOrchestrator {
       for(const citation of nativeModels) await this.#storage.addCitation(scope,{sessionId:session.id,...citation,provider:synthesis.provider,model:synthesis.model});
       const result={
         researchSessionId:session.id,question:request.query,mode:request.mode,answer:synthesis.answer,
-        sources:storedSources,claims:synthesis.claims,evidence,citations:await this.#storage.listCitations(scope,session.id),
+sources:storedSources,claims:synthesis.claims,evidence,citations:await this.#storage.listCitations(scope,session.id),searchQueries:[...new Set(searchQueriesIssued)],
         provider:synthesis.provider,model:synthesis.model,timestamp:new Date().toISOString(),
         confidence:synthesis.confidence,verification:{sourceCount:storedSources.length,evidenceCount:evidence.length,nativeCitationCount:nativeModels.length},
         warnings:[...warnings,...synthesis.warnings],errors,
@@ -101,11 +106,13 @@ export class ResearchOrchestrator {
         candidate=await this.#knowledge.createCandidate(scope,{sessionId:session.id,proposedTitle:input.candidateTitle??"Research knowledge candidate",proposedKnowledge:{answer:synthesis.answer,claims:synthesis.claims,sourceIds:storedSources.map((x)=>x.id),evidenceIds:evidence.map((x)=>x.id)},sourceIds:storedSources.map((x)=>x.id),evidenceIds:evidence.map((x)=>x.id),confidence:synthesis.confidence,rationale:"Candidate derived from preserved research evidence.",provider:synthesis.provider,model:synthesis.model,tool:"research"});
         result.knowledgeCandidateId=candidate.id;
       }
+      await this.#storage.appendEvent(scope,{eventType:"research_completed",actorType:"system",actorId:null,objectId:session.id,objectVersion:1,payload:{sourceCount:storedSources.length,searchCalls,urlRetrievalCount:retrievalCount,cacheHits,totalRetrievedBytes,provider:synthesis.provider,model:synthesis.model}});
       await this.#storage.updateSession(scope,session.id,{status:"completed",completedAt:new Date().toISOString(),selectedProvider:synthesis.provider,selectedModel:synthesis.model,answer:synthesis.answer,result,warnings:result.warnings,errors,tools:["web.search","url.retrieve"],providers:[...new Set([synthesis.provider,...storedSources.map((s)=>s.provider).filter(Boolean)])],models:[synthesis.model].filter(Boolean)});
       this.#events?.emit("research.completed",{sessionId:session.id,sourceCount:storedSources.length,cacheHits},{requestId:request.requestId,provider:synthesis.provider,model:synthesis.model});
       return result;
     } catch(error){
       errors.push({code:error.code??"RESEARCH_FAILED",message:error.message});
+      await this.#storage.appendEvent(scope,{eventType:"research_failed",actorType:"system",actorId:null,objectId:session.id,objectVersion:1,payload:{code:error.code??"RESEARCH_FAILED"}});
       await this.#storage.updateSession(scope,session.id,{status:"failed",completedAt:new Date().toISOString(),errors});
       this.#events?.emit("research.failed",{sessionId:session.id,code:error.code??"RESEARCH_FAILED"},{requestId:request.requestId});
       throw error;
