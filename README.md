@@ -455,3 +455,19 @@ Implemented:
 - tool failures and latency continue to be represented through structured events
 
 Current repository code does not auto-register arbitrary system, shell, filesystem, browser, or external-API tools. Tool implementations must be explicitly registered by application code.
+## Step 9 — multimodal & voice UX
+
+Implemented:
+
+- validated image attachments for chat (JPEG, PNG, WebP, GIF) with server-side size/count limits
+- provider-neutral image content blocks mapped for OpenAI, Anthropic, and Gemini vision inputs
+- vision requests are routed with the `vision` modality
+- authenticated `/api/voice-token` endpoint for constrained Gemini Live ephemeral tokens
+- browser Gemini Live WebSocket voice session using short-lived credentials
+- raw PCM microphone capture at the Live API input format and 24 kHz PCM response playback
+- live input/output transcription display
+- clean microphone/session teardown and voice connection status
+- CSP and Permissions-Policy updated only for the required Gemini Live WebSocket and microphone access
+- current chat message is explicitly included in both generate and stream provider inputs
+
+Gemini Live client-to-server authentication uses short-lived ephemeral tokens rather than exposing the long-lived Gemini API key in browser code. The token is constrained to the configured Live model, one use, audio response modality, transcriptions, and session resumption.
