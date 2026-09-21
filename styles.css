@@ -906,3 +906,80 @@ body.modal-open { overflow: hidden; }
   .startup-screen, .startup-progress span { transition: none; }
   .startup-mark { animation: none; }
 }
+
+
+/* Access gate */
+.auth-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 180;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  overflow: hidden;
+  background: var(--bg);
+}
+.auth-gate[hidden] { display: none; }
+.auth-glow {
+  position: absolute;
+  width: 420px;
+  height: 420px;
+  border-radius: 50%;
+  background: var(--accent);
+  filter: blur(120px);
+  opacity: .14;
+}
+.auth-card {
+  position: relative;
+  width: min(420px, 100%);
+  padding: 34px;
+  border: 1px solid var(--line);
+  border-radius: 26px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+.auth-mark {
+  width: 58px;
+  height: 58px;
+  margin: 0 auto 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  background: linear-gradient(135deg, var(--accent), #5d8cff);
+  color: #fff;
+  font-size: 1.45rem;
+  font-weight: 900;
+  box-shadow: 0 14px 36px rgba(103,91,220,.28);
+}
+.auth-card h1 {
+  margin: 8px 0;
+  font-size: clamp(1.6rem, 5vw, 2.1rem);
+  letter-spacing: -.045em;
+}
+.auth-card > p {
+  margin: 0 auto 22px;
+  max-width: 330px;
+  color: var(--muted);
+  line-height: 1.55;
+  font-size: .86rem;
+}
+.auth-form { display: grid; gap: 8px; text-align: left; }
+.auth-form label { color: var(--muted); font-size: .74rem; font-weight: 800; }
+.auth-form input {
+  width: 100%;
+  padding: 12px 13px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  outline: none;
+  background: var(--surface-2);
+  color: var(--text);
+}
+.auth-form input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); }
+.auth-submit { width: 100%; margin-top: 6px; border: 0; }
+.auth-status { min-height: 20px; margin-top: 10px; color: var(--muted); font-size: .74rem; text-align: center; }
+.auth-cancel { width: 100%; margin-top: 6px; }
+body.auth-open { overflow: hidden; }
+@media (max-width: 600px) {
+  .auth-card { padding: 26px 20px; border-radius: 22px; }
+}
