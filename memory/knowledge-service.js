@@ -35,13 +35,17 @@ export class KnowledgeService {
   #ledger;
   #provenance;
   #events;
+  #vectors;
+  #answerEmbedder;
 
-  constructor({ client, quota, ledger, provenance, events }) {
+  constructor({ client, quota, ledger, provenance, events, vectors = null, answerEmbedder = null }) {
     this.#client = client;
     this.#quota = quota;
     this.#ledger = ledger;
     this.#provenance = provenance;
     this.#events = events;
+    this.#vectors = vectors;
+    this.#answerEmbedder = answerEmbedder;
   }
 
   async create(scope, input) {
@@ -193,6 +197,7 @@ export class KnowledgeService {
     cacheable = true,
     provider = null,
     model = null,
+    embedding = null,
   } = {}) {
     assertScope(scope);
 
@@ -282,6 +287,24 @@ export class KnowledgeService {
       });
 
       await tx.commit();
+
+      if (embedding?.vector?.length && this.#vectors) {
+        await this.#vectors.insert(scope, {
+          objectType: "knowledge",
+          objectId: id,
+          version: knowledge.version,
+          vector: embedding.vector,
+          provider: embedding.provider ?? "answer-embedder",
+          model: embedding.model ?? "answer-embedding",
+          sourceType: "model",
+          sourceRef: knowledge.id,
+          metadata: {
+            answerFirst: true,
+            questionHash,
+          },
+        });
+      }
+
       return {
         knowledgeId: id,
         question: String(question).trim(),
@@ -443,6 +466,226 @@ export class KnowledgeService {
       try { await tx.rollback(); } catch {}
       throw error;
     }
+  }
+
+  async findSemanticSavedAnswer(scope, question, { minScore = 0.92, now = new Date(), embedding = null } = {}) {
+    assertScope(scope);
+    if (!this.#vectors) return null;
+
+    const threshold = Math.max(0.8, Math.min(0.95, Number(minScore) || 0.92));
+    let queryEmbedding = embedding;
+
+    if (!queryEmbedding && this.#answerEmbedder) {
+      queryEmbedding = await this.#answerEmbedder({
+        text: String(question ?? ""),
+        kind: "query",
+        scope,
+      });
+    }
+
+    if (!queryEmbedding?.vector?.length) return null;
+
+    const candidates = await this.#vectors.search(scope, queryEmbedding.vector, {
+      objectType: "knowledge",
+      metadataFilter: { answerFirst: true },
+      minScore: threshold,
+      limit: 5,
+    });
+
+    const timestamp = now instanceof Date ? now.toISOString() : new Date(now).toISOString();
+
+    for (const candidate of candidates) {
+      const result = await this.#client.execute({
+        sql: `SELECT
+            a.*,
+            k.title,
+            k.content_json,
+            k.content_text,
+            k.source_type,
+            k.source_ref,
+            k.confidence,
+            k.importance,
+            k.trust_level,
+            k.status AS knowledge_status,
+            k.version,
+            k.provenance_ref,
+            k.retention_expires_at,
+            k.updated_at AS knowledge_updated_at
+          FROM answer_index a
+          JOIN knowledge_records k
+            ON k.id = a.knowledge_id
+           AND k.tenant_id = a.tenant_id
+           AND k.user_id = a.user_id
+          WHERE a.tenant_id = ?
+            AND a.user_id = ?
+            AND a.knowledge_id = ?
+            AND a.cacheable = 1
+            AND k.deleted_at IS NULL
+            AND k.knowledge_type = 'saved_answer'
+            AND k.status IN ('important','permanent')
+            AND (a.expires_at IS NULL OR a.expires_at > ?)
+            AND (k.retention_expires_at IS NULL OR k.retention_expires_at > ?)
+          LIMIT 1`,
+        args: [scope.tenantId, scope.userId, candidate.objectId, timestamp, timestamp],
+      });
+
+      const row = result.rows[0];
+      if (!row) continue;
+
+      return {
+        knowledgeId: row.knowledge_id,
+        question: row.question_text,
+        normalizedQuestion: row.normalized_question,
+        questionHash: row.question_hash,
+        answer: fromJson(row.content_json),
+        contentText: row.content_text,
+        status: row.knowledge_status,
+        version: Number(row.version),
+        sourceType: row.source_type,
+        sourceRef: row.source_ref,
+        confidence: row.confidence == null ? null : Number(row.confidence),
+        importance: Number(row.importance),
+        trustLevel: row.trust_level,
+        provenanceRef: row.provenance_ref,
+        expiresAt: row.expires_at,
+        retentionExpiresAt: row.retention_expires_at,
+        provider: row.provider,
+        model: row.model,
+        hitCount: Number(row.hit_count),
+        lastHitAt: row.last_hit_at,
+        updatedAt: row.knowledge_updated_at,
+        score: candidate.score,
+      };
+    }
+
+    return null;
+  }
+
+  async recordAnswerMiss(scope, question, { reason = "no_match", now = new Date() } = {}) {
+    assertScope(scope);
+    const normalizedQuestion = normalizeAnswerQuestion(question);
+    await this.#ledger.append(scope, {
+      eventType: "answer_cache_miss",
+      actorType: "system",
+      actorId: null,
+      objectId: null,
+      payload: {
+        questionHash: hashString(normalizedQuestion),
+        reason,
+        occurredAt: now instanceof Date ? now.toISOString() : new Date(now).toISOString(),
+      },
+    });
+    return { questionHash: hashString(normalizedQuestion), reason };
+  }
+
+  async approveAnswerCandidate(scope, knowledgeId, { approvedBy, actorId = approvedBy } = {}) {
+    assertScope(scope);
+    if (!approvedBy) {
+      const error = new Error("Explicit answer approval identity is required.");
+      error.code = "ANSWER_APPROVAL_REQUIRED";
+      throw error;
+    }
+
+    const candidate = await this.get(scope, knowledgeId);
+    if (!candidate) {
+      const error = new Error("Saved-answer candidate not found.");
+      error.code = "ANSWER_CANDIDATE_NOT_FOUND";
+      throw error;
+    }
+
+    if (candidate.knowledge_type !== "saved_answer") {
+      const error = new Error("Only saved-answer candidates can be approved here.");
+      error.code = "ANSWER_CANDIDATE_INVALID";
+      throw error;
+    }
+
+    if (candidate.status !== "candidate") return candidate;
+
+    const updated = await this.update(scope, knowledgeId, {
+      status: "important",
+      approvedBy,
+      actorType: "user",
+      actorId,
+      changeType: "approved",
+      changeSummary: "Answer-First candidate approved.",
+    });
+
+    let embedding = null;
+    if (this.#answerEmbedder) {
+      embedding = await this.#answerEmbedder({
+        text: candidate.title,
+        answer: candidate.content,
+        kind: "saved-answer",
+        scope,
+        record: updated,
+      });
+    }
+
+    await this.createAnswerIndex(scope, {
+      knowledgeId: updated.id,
+      question: candidate.title,
+      expiresAt: updated.retention_expires_at,
+      cacheable: true,
+      provider: updated.source_type === "model" ? null : updated.source_type,
+      model: null,
+      embedding,
+    });
+
+    await this.#ledger.append(scope, {
+      eventType: "answer_approved",
+      actorType: "user",
+      actorId,
+      objectId: updated.id,
+      objectVersion: updated.version,
+      payload: {
+        approvedBy,
+        questionHash: hashString(normalizeAnswerQuestion(candidate.title)),
+      },
+    });
+
+    return this.findExactSavedAnswer(scope, candidate.title);
+  }
+
+  async rejectAnswerCandidate(scope, knowledgeId, { rejectedBy = null, reason = null } = {}) {
+    assertScope(scope);
+    const candidate = await this.get(scope, knowledgeId);
+    if (!candidate) {
+      const error = new Error("Saved-answer candidate not found.");
+      error.code = "ANSWER_CANDIDATE_NOT_FOUND";
+      throw error;
+    }
+    if (candidate.knowledge_type !== "saved_answer") {
+      const error = new Error("Only saved-answer candidates can be rejected here.");
+      error.code = "ANSWER_CANDIDATE_INVALID";
+      throw error;
+    }
+    if (candidate.status !== "candidate") return candidate;
+
+    const updated = await this.update(scope, knowledgeId, {
+      status: "archived",
+      actorType: "user",
+      actorId: rejectedBy,
+      changeSummary: reason ? "Answer-First candidate rejected: " + String(reason) : "Answer-First candidate rejected.",
+    });
+
+    await this.#ledger.append(scope, {
+      eventType: "answer_rejected",
+      actorType: "user",
+      actorId: rejectedBy,
+      objectId: knowledgeId,
+      objectVersion: updated.version,
+      payload: { reason },
+    });
+
+    return updated;
+  }
+
+  async listAnswerCandidates(scope, { limit = 50 } = {}) {
+    return this.list(scope, {
+      knowledgeType: "saved_answer",
+      statuses: ["candidate"],
+      limit,
+    });
   }
 
   async get(scope, id, { includeDeleted = false, version = null } = {}) {
