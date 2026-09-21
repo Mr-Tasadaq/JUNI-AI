@@ -7,6 +7,8 @@ import {
   sanitizeEventData,
   safeTokenEquals,
   validateProviderModelSelection,
+  clearAuthCookie,
+  serializeAuthCookie,
 } from "../core/security.js";
 
 const policy = {
@@ -23,6 +25,22 @@ test("token comparison and authorization are safe", () => {
   assert.equal(authorizeRequest({ headers: { authorization: "Bearer secret" } }, "secret").allowed, true);
   assert.equal(authorizeRequest({ headers: { authorization: "Bearer bad" } }, "secret").allowed, false);
   assert.equal(authorizeRequest({ headers: {} }, "secret").reason, "missing_bearer");
+});
+
+test("HttpOnly auth cookies can authorize requests without browser localStorage", () => {
+  const cookie = serializeAuthCookie("secret", { name: "juni_auth", maxAgeSeconds: 3600, secure: true });
+  assert.match(cookie, /HttpOnly/);
+  assert.match(cookie, /SameSite=Strict/);
+  assert.match(cookie, /Secure/);
+  assert.equal(
+    authorizeRequest(
+      { headers: { cookie: "juni_auth=secret" } },
+      "secret",
+      { cookieName: "juni_auth" }
+    ).allowed,
+    true
+  );
+  assert.match(clearAuthCookie({ name: "juni_auth", secure: true }), /Max-Age=0/);
 });
 
 test("provider and model request selections are allowlisted", () => {

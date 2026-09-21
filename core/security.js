@@ -9,13 +9,53 @@ export function safeTokenEquals(supplied, expected) {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-export function authorizeRequest(req, expectedToken) {
+function parseCookies(header) {
+  if (typeof header !== "string") return {};
+  const result = {};
+  for (const part of header.split(";")) {
+    const trimmed = part.trim();
+    const index = trimmed.indexOf("=");
+    if (index < 1) continue;
+    const name = trimmed.slice(0, index).trim();
+    const value = trimmed.slice(index + 1).trim();
+    try { result[name] = decodeURIComponent(value); } catch { result[name] = value; }
+  }
+  return result;
+}
+
+export function authorizeRequest(req, expectedToken, { cookieName = "juni_auth" } = {}) {
   if (!expectedToken) return { allowed: false, reason: "server_not_configured" };
   const header = req?.headers?.authorization ?? "";
-  if (!header.startsWith("Bearer ")) return { allowed: false, reason: "missing_bearer" };
-  return safeTokenEquals(header.slice(7).trim(), expectedToken)
-    ? { allowed: true, reason: "authorized" }
+  const bearer = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+  const cookieToken = parseCookies(req?.headers?.cookie ?? "")[cookieName]?.trim() ?? "";
+  const supplied = bearer || cookieToken;
+  if (!supplied) return { allowed: false, reason: "missing_bearer" };
+  return safeTokenEquals(supplied, expectedToken)
+    ? { allowed: true, reason: "authorized", source: bearer ? "bearer" : "cookie" }
     : { allowed: false, reason: "invalid_token" };
+}
+
+export function serializeAuthCookie(token, {
+  name = "juni_auth",
+  maxAgeSeconds = 2_592_000,
+  secure = true,
+} = {}) {
+  const encoded = encodeURIComponent(String(token ?? "").trim());
+  const parts = [
+    name + "=" + encoded,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Strict",
+    "Max-Age=" + Math.max(60, Math.floor(Number(maxAgeSeconds) || 2_592_000)),
+  ];
+  if (secure) parts.push("Secure");
+  return parts.join("; ");
+}
+
+export function clearAuthCookie({ name = "juni_auth", secure = true } = {}) {
+  const parts = [name + "=", "Path=/", "HttpOnly", "SameSite=Strict", "Max-Age=0"];
+  if (secure) parts.push("Secure");
+  return parts.join("; ");
 }
 
 export function validateProviderModelSelection({ provider, model } = {}, policy = {}) {

@@ -349,6 +349,14 @@ CREATE INDEX IF NOT EXISTS idx_ledger_scope_sequence
   ON ledger_events (tenant_id, sequence);
 
 
+CREATE TABLE IF NOT EXISTS rate_limit_buckets (
+  bucket_key TEXT PRIMARY KEY,
+  count INTEGER NOT NULL,
+  reset_at INTEGER NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_rate_limit_reset ON rate_limit_buckets (reset_at);
+
 CREATE TABLE IF NOT EXISTS research_sessions (
   id TEXT PRIMARY KEY,
   tenant_id TEXT NOT NULL,

@@ -49,3 +49,11 @@ test("Gemini Live keeps the model configurable", () => {
   assert.equal(live.defaultModel, "gemini-3.8-live");
   assert.equal(live.capabilities().includes("liveVoice"), true);
 });
+
+test("Gemini 3.8 Flash does not advertise unsupported Live output capabilities", () => {
+  const provider = createGeminiProvider(config);
+  const capabilities = provider.capabilities("gemini-3.8-flash");
+  assert.equal(capabilities.includes("audioInput"), true);
+  assert.equal(capabilities.includes("audioOutput"), false);
+  assert.equal(capabilities.includes("liveVoice"), false);
+});
