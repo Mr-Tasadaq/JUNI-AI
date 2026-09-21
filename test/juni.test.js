@@ -87,3 +87,47 @@ test("Juni core orchestrates a tool call and records structured events", async (
   assert.equal(types.includes("tool.completed"), true);
   assert.equal(types.includes("request.completed"), true);
 });
+
+test("Juni sends the current message to generate and stream providers", async () => {
+  const seen = [];
+  const provider = {
+    name: "openai",
+    defaultModel: "test-model",
+    capabilities: () => ["text", "streaming"],
+    health: async () => ({ available: true, configured: true }),
+    generate: async (request) => {
+      seen.push(["generate", request.messages]);
+      return { provider: "openai", model: "test-model", text: "ok", toolCalls: [] };
+    },
+    stream: async function* (request) {
+      seen.push(["stream", request.messages]);
+      yield { type: "text_delta", text: "ok" };
+      yield { type: "completed", model: "test-model" };
+    },
+  };
+
+  const config = loadConfig({
+    JUNI_DEFAULT_PROVIDER: "openai",
+    JUNI_FALLBACK_PROVIDERS: "",
+  });
+  const events = new EventBus();
+  const tools = new ToolRegistry();
+  const router = createRouter({
+    providers: {
+      openai: provider,
+      anthropic: unavailableProvider("anthropic"),
+      gemini: unavailableProvider("gemini"),
+    },
+    config,
+    events,
+  });
+  const juni = new JuniCore({ config, router, tools, events });
+
+  await juni.generate({ message: "current question", messages: [] });
+  const streamed = [];
+  for await (const event of juni.stream({ message: "stream question", messages: [] })) streamed.push(event);
+
+  assert.equal(seen[0][1].at(-1).content, "current question");
+  assert.equal(seen[1][1].at(-1).content, "stream question");
+  assert.equal(streamed.at(-1).type, "completed");
+});
