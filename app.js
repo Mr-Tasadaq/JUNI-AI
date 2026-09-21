@@ -40,6 +40,7 @@ const voiceState = {
   userTranscript: "",
   assistantTranscript: "",
   closing: false,
+  microphoneStarted: false,
 };
 
 if (!activeChatId) {
@@ -467,7 +468,7 @@ async function startVoice() {
     voiceState.assistantTranscript = "";
     voiceState.playbackTime = 0;
 
-    socket.onopen = async () => {
+    socket.onopen = () => {
       socket.send(JSON.stringify({
         setup: {
           model: "models/" + session.model,
@@ -480,12 +481,7 @@ async function startVoice() {
           },
         },
       }));
-
-      await startMicrophoneCapture();
-      elements.voiceButton.disabled = false;
-      elements.voiceButton.textContent = "■";
-      elements.voiceButton.setAttribute("aria-label", "Stop voice chat");
-      setVoiceStatus("Voice chat active · speak naturally", true);
+      setVoiceStatus("Connecting voice audio…", true);
     };
 
     socket.onmessage = handleVoiceMessage;
@@ -578,6 +574,21 @@ function handleVoiceMessage(event) {
     return;
   }
 
+  if (response.setupComplete && !voiceState.microphoneStarted) {
+    startMicrophoneCapture()
+      .then(() => {
+        voiceState.microphoneStarted = true;
+        elements.voiceButton.disabled = false;
+        elements.voiceButton.textContent = "■";
+        elements.voiceButton.setAttribute("aria-label", "Stop voice chat");
+        setVoiceStatus("Voice chat active · speak naturally", true);
+      })
+      .catch((error) => {
+        setVoiceStatus(error?.message || "Microphone access failed.", true);
+        stopVoice();
+      });
+  }
+
   const content = response.serverContent;
   if (content?.interimInputTranscription?.text) {
     setVoiceStatus("You: " + content.interimInputTranscription.text, true);
@@ -638,6 +649,9 @@ function stopVoice() {
   try {
     if (voiceState.socket?.readyState === WebSocket.OPEN) {
       voiceState.socket.send(JSON.stringify({ realtimeInput: { audioStreamEnd: true } }));
+    }
+    if (voiceState.socket &&
+        (voiceState.socket.readyState === WebSocket.OPEN || voiceState.socket.readyState === WebSocket.CONNECTING)) {
       voiceState.socket.close();
     }
   } catch {}
@@ -662,6 +676,7 @@ function cleanupVoiceResources() {
   voiceState.mediaStream = null;
   voiceState.audioContext = null;
   voiceState.playbackTime = 0;
+  voiceState.microphoneStarted = false;
 }
 
 async function authenticateWithAccessCode(token) {
