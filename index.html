@@ -9,6 +9,19 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <div class="startup-screen" id="startupScreen" aria-label="JUNI-AI starting">
+    <div class="startup-glow startup-glow-one" aria-hidden="true"></div>
+    <div class="startup-glow startup-glow-two" aria-hidden="true"></div>
+    <div class="startup-content">
+      <div class="startup-mark" aria-hidden="true"><span>J</span></div>
+      <div class="startup-eyebrow">JUNI-AI</div>
+      <h1>Ready when you are.</h1>
+      <p>Your private AI workspace is getting things ready.</p>
+      <div class="startup-progress" aria-hidden="true"><span id="startupProgress"></span></div>
+      <div class="startup-status" id="startupStatus" role="status" aria-live="polite">Starting JUNI-AI…</div>
+    </div>
+  </div>
+
   <div class="app-shell">
     <aside class="sidebar" id="sidebar" aria-label="Conversation sidebar">
       <div class="brand">
