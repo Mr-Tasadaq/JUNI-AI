@@ -372,11 +372,12 @@ test("voice browser source contains no Gemini API key access and remains audio-o
 });
 
 test("VoiceClient uses ephemeral token, keeps it in memory, handles interruption, tool calls, resumption, GoAway, and bounded reconnect", async () => {
+  let persisted = false;
   globalThis.localStorage = {
     getItem(key) {
       return key === "juni-ai-access-token-v1" ? "existing-juni-access" : null;
     },
-    setItem() { throw new Error("Voice client must not persist tokens."); },
+    setItem() { persisted = true; throw new Error("Voice client must not persist tokens."); },
   };
 
   const tokens = [
@@ -457,10 +458,11 @@ test("VoiceClient uses ephemeral token, keeps it in memory, handles interruption
   assert.deepEqual(setup.setup.responseModalities, ["AUDIO"]);
   assert.equal(setup.setup.model, "models/gemini-3.8-live");
   assert.equal(new URL(first.url).searchParams.get("access_token"), "auth_tokens/one");
-  assert.equal(localStorage.setItem, localStorage.setItem);
+  assert.equal(persisted, false);
 
   first.message({ serverContent: { modelTurn: { parts: [{ inlineData: { mimeType: "audio/pcm;rate=24000", data: "AQID" } }] } } });
   first.message({ serverContent: { interrupted: true } });
+  await new Promise((resolve) => setTimeout(resolve, 0));
   assert.ok(clearCount >= 1);
   assert.ok(events.some((event) => event.type === "voice.interrupted"));
 
@@ -496,3 +498,43 @@ function restoreEnv(key, value) {
   if (value === undefined) delete process.env[key];
   else process.env[key] = value;
 }
+
+
+test("voice token endpoint requires bearer auth and never accepts browser tenant headers as identity", async () => {
+  const previous = {
+    feature: process.env.JUNI_FEATURE_VOICE,
+    token: process.env.JUNI_API_TOKEN,
+    db: process.env.JUNI_DATABASE_URL,
+    tenant: process.env.JUNI_VOICE_DEFAULT_TENANT_ID,
+    user: process.env.JUNI_VOICE_DEFAULT_USER_ID,
+    gemini: process.env.GEMINI_API_KEY,
+  };
+  process.env.JUNI_FEATURE_VOICE = "true";
+  process.env.JUNI_API_TOKEN = "test-access";
+  process.env.JUNI_DATABASE_URL = "file:/tmp/juni-step4-endpoint-" + randomUUID() + ".db";
+  process.env.JUNI_VOICE_DEFAULT_TENANT_ID = "";
+  process.env.JUNI_VOICE_DEFAULT_USER_ID = "";
+  delete process.env.GEMINI_API_KEY;
+  try {
+    const module = await import("../api/voice-token.js?auth-test=" + randomUUID());
+    const unauthorized = fakeResponse();
+    await module.default({ method: "POST", headers: { origin: "https://example.com" }, body: {} }, unauthorized);
+    assert.equal(unauthorized.statusCode, 401);
+
+    const noIdentity = fakeResponse();
+    await module.default({
+      method: "POST",
+      headers: { origin: "https://example.com", authorization: "Bearer test-access", "x-tenant-id": "attacker", "x-user-id": "attacker" },
+      body: {},
+    }, noIdentity);
+    assert.equal(noIdentity.statusCode, 503);
+    assert.equal(noIdentity.body.code, "VOICE_IDENTITY_NOT_CONFIGURED");
+  } finally {
+    restoreEnv("JUNI_FEATURE_VOICE", previous.feature);
+    restoreEnv("JUNI_API_TOKEN", previous.token);
+    restoreEnv("JUNI_DATABASE_URL", previous.db);
+    restoreEnv("JUNI_VOICE_DEFAULT_TENANT_ID", previous.tenant);
+    restoreEnv("JUNI_VOICE_DEFAULT_USER_ID", previous.user);
+    restoreEnv("GEMINI_API_KEY", previous.gemini);
+  }
+});
