@@ -3,7 +3,6 @@ import { createJuniApplication } from "../core/app.js";
 import { authorizeRequest, checkOrigin, validateProviderModelSelection } from "../core/security.js";
 import { configuredProviderNames } from "../core/config.js";
 import { RouterError } from "../core/errors.js";
-import { checkRateLimit } from "../lib/rate-limit.js";
 
 let application;
 
@@ -15,6 +14,7 @@ function getApplication() {
 function json(res, status, body, extraHeaders = {}) {
   res.status(status);
   res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store");
   for (const [name, value] of Object.entries(extraHeaders)) res.setHeader(name, value);
   return res.json(body);
 }
@@ -51,7 +51,9 @@ export default async function handler(req, res) {
     return json(res, 403, { error: "Origin not allowed." });
   }
 
-  const auth = authorizeRequest(req, app.config.security.apiToken);
+  const auth = authorizeRequest(req, app.config.security.apiToken, {
+    cookieName: app.config.security.authCookieName,
+  });
   if (!auth.allowed) {
     return json(
       res,
@@ -64,7 +66,7 @@ export default async function handler(req, res) {
 
   const limit = Number.parseInt(process.env.JUNI_RATE_LIMIT || "20", 10);
   const windowSeconds = Number.parseInt(process.env.JUNI_RATE_WINDOW_SECONDS || "60", 10);
-  const rate = checkRateLimit(
+  const rate = await app.rateLimiter.check(
     clientKey(req),
     Number.isFinite(limit) && limit > 0 ? limit : 20,
     Number.isFinite(windowSeconds) && windowSeconds > 0 ? windowSeconds : 60
