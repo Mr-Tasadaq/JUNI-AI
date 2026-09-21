@@ -455,6 +455,19 @@ Implemented:
 - tool failures and latency continue to be represented through structured events
 
 Current repository code does not auto-register arbitrary system, shell, filesystem, browser, or external-API tools. Tool implementations must be explicitly registered by application code.
+## Step 10 — observability, reliability & production diagnostics
+
+Implemented:
+
+- bounded in-memory runtime metrics for requests, failures, retries, provider latency, token usage, and reported provider cost
+- p50/p95 provider latency samples with configurable memory bound
+- authenticated `/api/health` diagnostics with storage readiness, provider availability, runtime metrics, and degraded status
+- streaming provider completion telemetry is correlated with request IDs
+- health/metrics output excludes credentials and request content
+- rate limiting, timeout, retry, and structured event telemetry remain in the request path
+
+Runtime metrics are intentionally instance-local because Vercel/serverless instances are ephemeral. Persistent audit/ledger records remain the durable history where the existing application writes them.
+
 ## Step 9 — multimodal & voice UX
 
 Implemented:
