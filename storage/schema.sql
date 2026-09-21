@@ -107,6 +107,29 @@ CREATE INDEX IF NOT EXISTS idx_knowledge_scope_status
 CREATE INDEX IF NOT EXISTS idx_knowledge_type
   ON knowledge_records (tenant_id, user_id, knowledge_type, status);
 
+CREATE TABLE IF NOT EXISTS answer_index (
+  knowledge_id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  question_text TEXT NOT NULL,
+  normalized_question TEXT NOT NULL,
+  question_hash TEXT NOT NULL,
+  expires_at TEXT,
+  cacheable INTEGER NOT NULL DEFAULT 1,
+  provider TEXT,
+  model TEXT,
+  hit_count INTEGER NOT NULL DEFAULT 0,
+  last_hit_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL,
+  UNIQUE (tenant_id, user_id, question_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_answer_index_scope_hash
+  ON answer_index (tenant_id, user_id, question_hash);
+CREATE INDEX IF NOT EXISTS idx_answer_index_expiry
+  ON answer_index (tenant_id, user_id, expires_at);
+
 CREATE TABLE IF NOT EXISTS knowledge_versions (
   knowledge_id TEXT NOT NULL,
   tenant_id TEXT NOT NULL,
