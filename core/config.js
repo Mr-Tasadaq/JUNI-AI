@@ -137,6 +137,9 @@ export function loadConfig(env = process.env) {
     observability: {
       maxEventPayloadBytes: intOrDefault(env.JUNI_MAX_EVENT_PAYLOAD_BYTES, 8_192, 256),
     },
+    provenance: {
+      storageBudgetBytes: intOrDefault(env.JUNI_STORAGE_BUDGET_BYTES, 10 * 1024 * 1024 * 1024, 1),
+    },
     voice: {
       enabled: boolOrDefault(env.JUNI_FEATURE_VOICE, false),
       tokenTtlSeconds: clampVoiceSeconds(env.JUNI_VOICE_TOKEN_TTL_SECONDS, 1_800, 60, 71_999),
