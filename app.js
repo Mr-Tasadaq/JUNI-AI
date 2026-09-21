@@ -280,7 +280,7 @@ async function requestAssistant(text, history, researchEnabled = false, allowAut
       }
     : {
         message: text,
-        messages: history,
+        messages: history.slice(0, -1),
         conversationId: activeConversationId(),
       };
 
