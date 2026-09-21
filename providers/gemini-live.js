@@ -1,4 +1,4 @@
-async function asyncLoadGeminiLive() {
+async function asyncLoadGeminiLiveLive() {
   const module = await import("@google/genai");
   return { GoogleGenAI: module.GoogleGenAI, Modality: module.Modality };
 }
@@ -16,7 +16,7 @@ function asConfig(options = {}) {
   };
 }
 
-export function createGeminiLiveProvider(config, { sdkLoader = asyncLoadGemini } = {}) {
+export function createGeminiLiveProvider(config, { sdkLoader = asyncLoadGeminiLive } = {}) {
   const providerConfig = config.providers.gemini;
 
   return {
@@ -29,7 +29,7 @@ export function createGeminiLiveProvider(config, { sdkLoader = asyncLoadGemini }
 
     async connect(options = {}) {
       requireApiKey("gemini", providerConfig.apiKey);
-      const { GoogleGenAI } = await asyncLoadGeminiLive();
+      const { GoogleGenAI } = await asyncLoadGeminiLiveLive();
       const client = new GoogleGenAI({ apiKey: providerConfig.apiKey });
       const model = options.model || providerConfig.liveModel;
 
