@@ -57,6 +57,20 @@ export class VoiceClient {
     this.#onOpenWebsite = onOpenWebsite;
     this.#onError = onError;
     this.#captionEnabled = Boolean(elements.captionsToggle?.checked);
+    this.#onVisibilityChange = () => {
+      if (!this.#machine || this.#closedByUser) return;
+      if (document.visibilityState === "visible") {
+        this.#audioOutput?.resume().catch(() => {});
+      } else {
+        this.#audioOutput?.suspend().catch(() => {});
+      }
+    };
+    this.#onPageHide = () => {
+      this.stop("page_hidden");
+    };
+    document.addEventListener("visibilitychange", this.#onVisibilityChange);
+    window.addEventListener("pagehide", this.#onPageHide);
+    window.addEventListener("beforeunload", this.#onPageHide);
   }
 
   get state() { return this.#machine?.state ?? "idle"; }
@@ -76,6 +90,8 @@ export class VoiceClient {
 
     try {
       this.#config = await this.#fetchVoiceToken({ resumeHandle: null, sessionId: null });
+      this.#token = this.#config.token;
+      this.#tokenExpiresAt = Date.parse(this.#config.expiresAt);
       this.#sessionId = this.#config.sessionId;
       this.#model = this.#config.model;
       this.#machine = new VoiceStateMachine({ sessionId: this.#sessionId });
