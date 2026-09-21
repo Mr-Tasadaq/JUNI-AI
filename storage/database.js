@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { createClient } from "@libsql/client";
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 function splitStatements(sql) {
   return sql
