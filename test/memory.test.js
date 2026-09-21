@@ -443,3 +443,77 @@ test("inspection service exposes memory, provenance, usage, learning events, and
   assert.equal((await app.inspection.audit(scope())).length >= 1, true);
   assert.equal((await app.inspection.verifyProvenance(scope())).valid, true);
 });
+
+
+test("saved answers support normalized exact lookup, TTL, and atomic hit counting", async () => {
+  const app = await makeApp();
+  const answer = await app.knowledge.create(scope(), {
+    knowledgeType: "saved_answer",
+    title: "JUNI answer",
+    content: "Use npm ci for the locked JUNI-AI dependency install.",
+    sourceType: "model",
+    trustLevel: "generated",
+    status: "important",
+    approvedBy: "user-a",
+    provider: "openai",
+    model: "gpt-5.5",
+  });
+
+  const future = new Date(Date.now() + 60_000).toISOString();
+  const indexed = await app.knowledge.createAnswerIndex(scope(), {
+    knowledgeId: answer.id,
+    question: "  How   do I install JUNI-AI?  ",
+    expiresAt: future,
+    provider: "openai",
+    model: "gpt-5.5",
+  });
+
+  assert.equal(indexed.normalizedQuestion, "how do i install juni-ai?");
+
+  const hit = await app.knowledge.findExactSavedAnswer(scope(), "HOW DO I INSTALL JUNI-AI?");
+  assert.equal(hit.knowledgeId, answer.id);
+  assert.equal(hit.answer, "Use npm ci for the locked JUNI-AI dependency install.");
+  assert.equal(hit.hitCount, 0);
+
+  const counted = await app.knowledge.recordAnswerHit(scope(), answer.id, { matchType: "exact" });
+  assert.equal(counted.hitCount, 1);
+
+  const secondHit = await app.knowledge.findExactSavedAnswer(scope(), "how do i install juni-ai?");
+  assert.equal(secondHit.hitCount, 1);
+
+  const expired = await app.knowledge.findExactSavedAnswer(scope(), "how do i install juni-ai?", {
+    now: new Date(Date.now() + 120_000),
+  });
+  assert.equal(expired, null);
+});
+
+test("saved-answer lookup and hit tracking are tenant/user scoped", async () => {
+  const app = await makeApp();
+  const answer = await app.knowledge.create(scope("tenant-a", "user-a"), {
+    knowledgeType: "saved_answer",
+    content: "Private saved answer.",
+    sourceType: "model",
+    trustLevel: "generated",
+    status: "important",
+    approvedBy: "user-a",
+  });
+
+  await app.knowledge.createAnswerIndex(scope("tenant-a", "user-a"), {
+    knowledgeId: answer.id,
+    question: "Private question?",
+  });
+
+  assert.equal(
+    await app.knowledge.findExactSavedAnswer(scope("tenant-a", "user-b"), "Private question?"),
+    null
+  );
+  assert.equal(
+    await app.knowledge.findExactSavedAnswer(scope("tenant-b", "user-a"), "Private question?"),
+    null
+  );
+
+  await assert.rejects(
+    () => app.knowledge.recordAnswerHit(scope("tenant-a", "user-b"), answer.id),
+    (error) => error.code === "ANSWER_INDEX_NOT_FOUND"
+  );
+});
