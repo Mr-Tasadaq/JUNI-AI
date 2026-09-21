@@ -40,8 +40,12 @@ export class JuniCore {
     }
 
     const lastMessage = messages.at(-1);
-    if (lastMessage?.role === "user" && lastMessage.content === normalized.message) {
+    if (normalized.message && lastMessage?.role === "user" && lastMessage.content === normalized.message) {
       messages.pop();
+    }
+
+    if (normalized.message) {
+      messages.push({ role: "user", content: normalized.message });
     }
 
     this.#events?.emit("request.started", {
