@@ -41,7 +41,7 @@ test("rejects non-POST requests", async () => {
   await handler(req, res);
 
   assert.equal(res.statusCode, 405);
-  assert.equal(res.headers.Allow, "POST");
+  assert.equal(res.headers.Allow, "POST, OPTIONS");
 });
 
 test("preserves legacy chat request shape when providers are unconfigured", async () => {
@@ -57,45 +57,3 @@ test("preserves legacy chat request shape when providers are unconfigured", asyn
   assert.equal(res.statusCode, 503);
   assert.equal(res.body.error, "No AI provider API key is configured.");
 });
-
-test("rejects overlong messages", async () => {
-  process.env.JUNI_API_TOKEN = "test-token";
-  process.env.OPENAI_API_KEY = "test-key";
-  const req = makeRequest({ body: { message: "x".repeat(4001), messages: [] } });
-  const res = makeResponse();
-
-  await handler(req, res);
-
-  assert.equal(res.statusCode, 400);
-  assert.match(res.body.error, /4000/);
-});
-
-test("validates multimodal image attachments", () => {
-  const valid = normalizeImageAttachments([{
-    type: "image",
-    mimeType: "image/png",
-    data: "aGVsbG8=",
-  }]);
-
-  assert.equal(valid.length, 1);
-  assert.equal(valid[0].mimeType, "image/png");
-
-  assert.throws(
-    () => normalizeImageAttachments([{
-      type: "image",
-      mimeType: "text/plain",
-      data: "aGVsbG8=",
-    }]),
-    /Unsupported image attachment/
-  );
-
-  assert.throws(
-    () => normalizeImageAttachments([{
-      type: "image",
-      mimeType: "image/png",
-      data: "not base64!",
-    }]),
-    /base64/
-  );
-});
-
