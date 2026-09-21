@@ -20,11 +20,10 @@ export function createJuniApplication({ env = process.env, tools = createToolReg
 
   const providers = createProviderRegistry(config);
   const router = createRouter({ providers, config, events });
-  const toolRegistry = tools;
   const resolvedAnswerEmbedder = answerEmbedder ?? createOpenAIAnswerEmbedder(config);
   const memory = createJuniMemoryApplication({ config, events, answerEmbedder: resolvedAnswerEmbedder });
   const research = createJuniResearchApplication({ config, events, router, memory });
-  const juni = createJuni({ config, router, tools: toolRegistry, events });
+  const juni = createJuni({ config, router, tools, events });
   const voice = new VoiceSessionController({
     sessionFactory: (options) => providers.geminiLive.connect(options),
     onEvent: (event) => events.emit(event.type, event),
