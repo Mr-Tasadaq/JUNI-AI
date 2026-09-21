@@ -443,6 +443,7 @@ export class VoiceClient {
     this.#transitionSafely("reconnecting");
     this.#emit("voice.reconnect.started", { sessionId: this.#sessionId, attempt, delayMs, reason: sanitizeReason(closeEvent.reason) });
     this.#sendAudit("voice_session_reconnected", { sessionId: this.#sessionId, attempt });
+    const staleSocket = this.#socket;
     this.#reconnectTimer = setTimeout(async () => {
       this.#reconnectTimer = null;
       try {
@@ -452,6 +453,9 @@ export class VoiceClient {
         if (!this.#stopped) this.#scheduleReconnect({ reason: "reconnect_failed" });
       }
     }, delayMs);
+    if (staleSocket && staleSocket.readyState === this.#WebSocket.OPEN) {
+      try { staleSocket.close(1000, "reconnecting"); } catch {}
+    }
   }
 
   #scheduleSessionTimeout() {
