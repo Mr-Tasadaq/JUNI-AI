@@ -53,6 +53,11 @@ export function normalizeSearchSource(raw, context = {}) {
   };
 }
 
+function nullableString(value) {
+  if (value == null || String(value).trim() === "") return null;
+  return String(value).trim();
+}
+
 export function normalizeHtmlText(html) {
   return String(html ?? "")
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
