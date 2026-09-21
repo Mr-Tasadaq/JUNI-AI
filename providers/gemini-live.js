@@ -16,7 +16,7 @@ function asConfig(options = {}) {
   };
 }
 
-export function createGeminiLiveProvider(config) {
+export function createGeminiLiveProvider(config, { sdkLoader = asyncLoadGemini } = {}) {
   const providerConfig = config.providers.gemini;
 
   return {
