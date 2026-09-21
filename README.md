@@ -498,3 +498,20 @@ Implemented in the repository:
 - frontend source-contract tests covering the production UX surface and the candidate rendering trust boundary
 
 The browser-local conversation list remains a convenience cache. Server-side conversation context remains authoritative when a trusted identity scope is available.
+## Step 12 — production hardening, deployment & security review
+
+Implemented in the repository:
+
+- fail-fast Vercel production configuration validation through `npm run verify:production`
+- production requirements for application authentication, exact HTTPS origin, provider availability, durable remote storage, and the current fixed tenant/user scope
+- production-only rejection of identity-header trust, plus feature-specific checks for web research, voice, and approved-answer export
+- stronger Vercel security headers including HSTS, clickjacking protection, cross-origin policies, restrictive CSP, and browser permissions policy
+- pinned checkout and Node setup GitHub Actions by immutable commit SHA
+- high-severity production dependency audit in CI
+- JavaScript CodeQL scanning and Dependabot updates for npm and GitHub Actions
+- `.well-known/security.txt` for responsible vulnerability reporting
+- centralized client-address resolution across authenticated API rate limits
+- dedicated authentication rate limiting separate from normal AI request limits
+- production hardening tests for deployment configuration and security controls
+
+The production validator runs only for the Vercel production environment (or NODE_ENV=production), so local development and previews are not blocked by production-only secrets.
