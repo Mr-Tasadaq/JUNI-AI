@@ -1,5 +1,5 @@
 import { createJuniApplication } from "../core/app.js";
-import { authorizeRequest, checkOrigin } from "../core/security.js";
+import { authorizeRequest, checkOrigin, requestClientKey } from "../core/security.js";
 import { createGeminiEphemeralToken } from "../core/voice-token.js";
 
 let application;
@@ -15,11 +15,6 @@ function json(res, status, body) {
   return res.json(body);
 }
 
-function clientKey(req) {
-  return req.headers["x-forwarded-for"]?.split(",")[0]?.trim()
-    || req.headers["x-real-ip"]
-    || "unknown";
-}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
