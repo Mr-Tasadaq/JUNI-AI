@@ -10,13 +10,18 @@ import { createJuniMemoryApplication } from "../memory/app.js";
 import { createJuniResearchApplication } from "../research/app.js";
 import { createRateLimiter } from "../lib/rate-limit.js";
 import { createOpenAIAnswerEmbedder } from "../memory/answer-embedder.js";
+import { createMetricsCollector } from "./metrics.js";
 
 export function createJuniApplication({ env = process.env, tools = createToolRegistry(), eventSink, answerEmbedder = null } = {}) {
   const config = loadConfig(env);
   const events = new EventBus({ maxPayloadBytes: config.observability.maxEventPayloadBytes });
   const sink = eventSink ?? createMemoryEventSink();
+  const metrics = createMetricsCollector({
+    maxSamples: config.observability.metricsMaxSamples,
+  });
 
   events.subscribe((event) => sink.push(event));
+  events.subscribe((event) => metrics.consume(event));
 
   const providers = createProviderRegistry(config);
   const router = createRouter({ providers, config, events });
