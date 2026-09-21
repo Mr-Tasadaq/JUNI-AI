@@ -110,3 +110,7 @@ Retrieved pages are UNTRUSTED DATA. The research layer explicitly instructs synt
 The research HTTP endpoint does not trust arbitrary tenant/user headers by default. It uses authenticated request identity when available or a server-configured fixed scope. Provider API keys remain server-side.
 
 Provider-native citations are preserved only when they can be mapped to a retrieved source. Application citations are accepted only when the cited source and evidence IDs exist. Conflicting evidence is retained as supports/contradicts/qualifies relationships rather than silently merged.
+
+## Step 4 realtime voice hardening
+
+The voice browser path uses a short-lived single-use Gemini Live ephemeral token. The browser uses the existing HttpOnly authentication cookie and never reads or persists the application access token in JavaScript storage. The Live token constrains the configured model, AUDIO-only response modality, Juni system identity, session resumption, context-window compression, and the allowlisted realtime tools. Raw microphone and model audio are not persisted by default.

@@ -28,6 +28,20 @@ export const EVENT_TYPES = Object.freeze([
   "research.started",
   "research.completed",
   "research.failed",
+  "voice.session.started",
+  "voice.session.connected",
+  "voice.listening.started",
+  "voice.listening.stopped",
+  "voice.speaking.started",
+  "voice.speaking.stopped",
+  "voice.interrupted",
+  "voice.tool.started",
+  "voice.tool.completed",
+  "voice.tool.failed",
+  "voice.reconnect.started",
+  "voice.reconnect.completed",
+  "voice.session.completed",
+  "voice.session.failed",
 ]);
 
 export class EventBus {

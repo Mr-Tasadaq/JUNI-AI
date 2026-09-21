@@ -10,6 +10,7 @@ import { createJuniMemoryApplication } from "../memory/app.js";
 import { createJuniResearchApplication } from "../research/app.js";
 import { createRateLimiter } from "../lib/rate-limit.js";
 import { createOpenAIAnswerEmbedder } from "../memory/answer-embedder.js";
+import { createVoiceMemoryHooks } from "../voice/memory-hooks.js";
 
 export function createJuniApplication({ env = process.env, tools = createToolRegistry(), eventSink, answerEmbedder = null } = {}) {
   const config = loadConfig(env);
@@ -24,6 +25,8 @@ export function createJuniApplication({ env = process.env, tools = createToolReg
   const memory = createJuniMemoryApplication({ config, events, answerEmbedder: resolvedAnswerEmbedder });
   const research = createJuniResearchApplication({ config, events, router, memory });
   const juni = createJuni({ config, router, tools, events });
+  const voiceMemory = createVoiceMemoryHooks({ retrieval: memory.retrieval });
+  const voiceSessions = memory.voiceSessions;
   const voice = new VoiceSessionController({
     sessionFactory: (options) => providers.geminiLive.connect(options),
     onEvent: (event) => events.emit(event.type, event),
@@ -43,6 +46,8 @@ export function createJuniApplication({ env = process.env, tools = createToolReg
     tools,
     juni,
     voice,
+    voiceMemory,
+    voiceSessions,
     rateLimiter,
     memory,
     research,

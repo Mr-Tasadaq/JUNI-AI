@@ -5,6 +5,11 @@ function stringOrUndefined(value) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+function clampVoiceSeconds(value, fallback, min, max) {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  return Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : fallback;
+}
+
 function intOrDefault(value, fallback, min = Number.MIN_SAFE_INTEGER) {
   const parsed = Number.parseInt(String(value ?? ""), 10);
   return Number.isFinite(parsed) && parsed >= min ? parsed : fallback;
