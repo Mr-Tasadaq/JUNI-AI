@@ -61,7 +61,21 @@ The router can retry and/or fall back without exposing vendor-specific error pay
 
 ## Realtime voice
 
-Gemini Live is server-side by design in this foundation. The Live API uses stateful WebSocket sessions and supports realtime audio/video input and native audio output. Client microphone access should be introduced later with a secure session/ephemeral-token design rather than shipping a persistent Gemini API key to the browser.
+Step 4 uses a secure ephemeral-token boundary for Gemini Live.
+
+The browser calls `POST /api/voice-token` through the existing bearer/origin/rate-limit controls. The server keeps `GEMINI_API_KEY` private, validates the configured Live model, and creates a short-lived single-use token with constrained Live settings.
+
+The browser stores the ephemeral token only in an in-memory private client field. It is never written to localStorage, sessionStorage, IndexedDB, cookies, URL query strings, or provenance/audit records.
+
+The token constrains the Live model, AUDIO-only response modality, Juni identity, session-resumption configuration, context-window compression, and allowlisted realtime function declarations.
+
+The direct browser WebSocket connects only to the required Gemini constrained endpoint. The CSP permits that Gemini WebSocket host in addition to same-origin connections. Permissions-Policy permits microphone for the application origin and denies camera access.
+
+The microphone pipeline requests audio only after explicit user action, resamples to 16 kHz PCM16, and sends bounded realtime chunks. Raw microphone/model audio is not persisted by default.
+
+Retrieved/model-supplied tool calls are not arbitrary browser automation. Only `openWebsite` and `getCurrentTime` are accepted, arguments are schema-validated, and a website open requires an explicit user click.
+
+Voice lifecycle metrics are persisted through the existing tenant/user-scoped Step 2 storage/quota layer and recorded as safe tamper-evident audit metadata. Raw audio and ephemeral credentials never enter the ledger.
 
 
 ## Step 2 persistent-data boundaries
