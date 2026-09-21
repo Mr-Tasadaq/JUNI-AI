@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import handler from "../api/chat.js";
+import handler, { normalizeImageAttachments } from "../api/chat.js";
 
 function makeResponse() {
   return {
@@ -69,3 +69,33 @@ test("rejects overlong messages", async () => {
   assert.equal(res.statusCode, 400);
   assert.match(res.body.error, /4000/);
 });
+
+test("validates multimodal image attachments", () => {
+  const valid = normalizeImageAttachments([{
+    type: "image",
+    mimeType: "image/png",
+    data: "aGVsbG8=",
+  }]);
+
+  assert.equal(valid.length, 1);
+  assert.equal(valid[0].mimeType, "image/png");
+
+  assert.throws(
+    () => normalizeImageAttachments([{
+      type: "image",
+      mimeType: "text/plain",
+      data: "aGVsbG8=",
+    }]),
+    /Unsupported image attachment/
+  );
+
+  assert.throws(
+    () => normalizeImageAttachments([{
+      type: "image",
+      mimeType: "image/png",
+      data: "not base64!",
+    }]),
+    /base64/
+  );
+});
+
