@@ -129,6 +129,10 @@ export function createVoiceTokenHandler({ getApplication = defaultGetApplication
         captionsEnabled: app.config.voice.captionsEnabled,
         audioChunkMs: app.config.voice.audioChunkMs,
         outputBufferLimitMs: app.config.voice.outputBufferLimitMs,
+        reconnectAttempts: app.config.voice.reconnectAttempts,
+        reconnectBaseDelayMs: app.config.voice.reconnectBaseDelayMs,
+        bargeInRmsThreshold: app.config.voice.bargeInRmsThreshold,
+        bargeInHoldMs: app.config.voice.bargeInHoldMs,
         websocketUrl: app.config.voice.websocketUrl,
       });
     } catch (error) {
