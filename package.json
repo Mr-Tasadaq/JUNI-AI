@@ -8,11 +8,11 @@
     "test": "node --test",
     "check": "node --check app.js && node --check api/chat.js && node --check api/auth.js && node --check api/research.js && node --check api/answers.js && node --check api/voice-token.js && node --check api/health.js",
     "dev": "npx serve .",
-    "export:answers": "node scripts/export-approved-answers.js"
+    "export:answers": "node scripts/export-approved-answers.js",
+    "audit:security": "npm audit --omit=dev --audit-level=high",
+    "verify:production": "node scripts/verify-production-config.js"
   },
-  "engines": {
-    "node": ">=22"
-  },
+  "engines": { "node": ">=22" },
   "dependencies": {
     "@anthropic-ai/sdk": "0.127.0",
     "@google/genai": "2.23.0",
