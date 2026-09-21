@@ -49,6 +49,8 @@ export function normalizeSearchSource(raw, context = {}) {
     provider: context.provider ?? raw.provider ?? null,
     tool: context.tool ?? raw.tool ?? null,
     researchSessionId: context.sessionId ?? null,
+    content: raw.content ?? null,
+    contentSizeBytes: raw.contentSizeBytes ?? (raw.content == null ? 0 : Buffer.byteLength(String(raw.content), "utf8")),
     metadata,
   };
 }
