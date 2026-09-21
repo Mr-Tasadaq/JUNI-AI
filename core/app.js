@@ -10,7 +10,13 @@ import { createJuniMemoryApplication } from "../memory/app.js";
 import { createJuniResearchApplication } from "../research/app.js";
 import { createRateLimiter } from "../lib/rate-limit.js";
 
-export function createJuniApplication({ env = process.env, tools = createToolRegistry(), eventSink } = {}) {
+export function createJuniApplication({
+  env = process.env,
+  tools = createToolRegistry(),
+  eventSink,
+  embedder = null,
+  answerEmbedder = null,
+} = {}) {
   const config = loadConfig(env);
   const events = new EventBus({ maxPayloadBytes: config.observability.maxEventPayloadBytes });
   const sink = eventSink ?? createMemoryEventSink();
@@ -19,7 +25,7 @@ export function createJuniApplication({ env = process.env, tools = createToolReg
 
   const providers = createProviderRegistry(config);
   const router = createRouter({ providers, config, events });
-  const memory = createJuniMemoryApplication({ config, events });
+  const memory = createJuniMemoryApplication({ config, events, embedder, answerEmbedder });
   const research = createJuniResearchApplication({ config, events, router, memory });
   const juni = createJuni({ config, router, tools, events });
   const voice = new VoiceSessionController({
