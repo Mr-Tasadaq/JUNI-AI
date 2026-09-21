@@ -88,7 +88,7 @@ export class ResearchStorage {
       await this.#quota.assertWithinQuota(scope,sizeBytes,{category:"other",executor:tx});
       let provenance=null;
       if(source.url){
-        const registered=await this.#provenance.registerSource(scope,{subjectId:sourceId,sourceType:"external",url:source.url,title:source.title??null,retrievedAt:now,checksum:source.contentHash??null,provider:context.provider??source.provider??null,tool:context.tool??source.tool??null,relatedIds:[sessionId],metadata});
+        const registered=await this.#provenance.registerSourceInTransaction(tx,scope,{subjectId:sourceId,sourceType:"external",url:source.url,title:source.title??null,retrievedAt:now,checksum:source.contentHash??null,provider:context.provider??source.provider??null,tool:context.tool??source.tool??null,relatedIds:[sessionId],metadata});
         provenance=registered.provenance;
       }
       await tx.execute({sql:"INSERT INTO research_sources (id,tenant_id,user_id,session_id,url,canonical_url,title,domain,publisher,author,publication_date,retrieved_at,content_type,language,status,source_type,primary_source_candidate,relevance_score,corroboration_count,content_hash,metadata_hash,provider,tool,content,content_size_bytes,metadata_json,duplicate_of_source_id,size_bytes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
