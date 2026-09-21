@@ -154,10 +154,6 @@ export default async function handler(req, res) {
     return json(res, 405, { error: "Method not allowed." });
   }
 
-  if (!checkOrigin(req.headers.origin, app.config.security.allowedOrigin)) {
-    return json(res, 403, { error: "Origin not allowed." });
-  }
-
   const auth = authorizeRequest(req, app.config.security.apiToken, {
     cookieName: app.config.security.authCookieName,
   });
