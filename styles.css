@@ -788,6 +788,118 @@ body.modal-open { overflow: hidden; }
 }
 
 
+/* Startup dashboard */
+.dashboard-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 26px;
+}
+.dashboard-action {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: var(--surface-2);
+  color: var(--text);
+  text-align: left;
+  transition: 160ms ease;
+}
+.dashboard-action:hover {
+  transform: translateY(-1px);
+  border-color: rgba(139, 124, 255, 0.34);
+}
+.dashboard-action-primary {
+  border-color: color-mix(in srgb, var(--accent) 36%, var(--line));
+  background: color-mix(in srgb, var(--accent) 9%, var(--surface-2));
+}
+.dashboard-action-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border-radius: 10px;
+  background: var(--surface-3);
+  color: var(--accent-strong);
+  font-weight: 900;
+}
+.dashboard-action strong,
+.dashboard-action small {
+  display: block;
+}
+.dashboard-action strong {
+  font-size: .78rem;
+  line-height: 1.25;
+}
+.dashboard-action small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: .68rem;
+  line-height: 1.4;
+}
+.mode-strip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(3, auto);
+  align-items: center;
+  gap: 9px;
+  margin-top: 14px;
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: var(--surface-2);
+}
+.mode-strip-label {
+  display: grid;
+  gap: 3px;
+  padding: 2px 5px;
+}
+.mode-strip-label strong {
+  font-size: .76rem;
+}
+.mode-chip {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 11px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: .72rem;
+  font-weight: 800;
+}
+.mode-chip:hover {
+  border-color: rgba(139, 124, 255, 0.34);
+}
+.mode-chip span {
+  margin-right: 4px;
+  color: var(--accent-strong);
+}
+@media (max-width: 900px) {
+  .dashboard-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .mode-strip {
+    grid-template-columns: 1fr repeat(3, auto);
+  }
+}
+@media (max-width: 600px) {
+  .dashboard-actions {
+    grid-template-columns: 1fr;
+  }
+  .mode-strip {
+    grid-template-columns: 1fr 1fr;
+  }
+  .mode-strip-label {
+    grid-column: 1 / -1;
+  }
+  .mode-chip {
+    width: 100%;
+  }
+}
+
 /* Startup experience */
 .startup-screen {
   position: fixed;
