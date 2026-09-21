@@ -407,6 +407,37 @@ Research is disabled by default through JUNI_FEATURE_WEB_RESEARCH=false. Enable 
 
 Step 4 can add a durable external audit checkpoint or other independent anchoring for the tamper-evident provenance chain.
 
+## Step 6 — Answer-First
+
+Implemented:
+
+- exact normalized saved-answer lookup before provider calls
+- provider-neutral semantic saved-answer lookup with configurable 0.80–0.95 threshold
+- optional OpenAI embeddings adapter for Answer-First indexing/querying
+- candidate creation for safe answer misses with explicit approval before reuse
+- candidate approve/reject API at /api/answers
+- hit/miss audit events and hit counters
+- retention cleanup for expired Answer-First indexes
+- optional serial export of explicitly approved answers to a configured GitHub repository
+- GitHub export is disabled by default; enabling publication is an explicit deployment decision
+
+## Step 7 — persistent context & personalization
+
+Implemented:
+
+- stable conversation IDs from the browser chat to the server
+- tenant/user-scoped persistent conversation context
+- server-side recent context retrieval for non-streaming chat
+- approved user preferences retrieved from persistent memory and injected as contextual data
+- conversation retention controlled by JUNI_RETENTION_CONVERSATION_DAYS
+- client-supplied history remains compatible, while scoped server context becomes authoritative when available
+
+When no trusted tenant/user identity is configured, normal chat continues to work but durable scoped context and Answer-First persistence are skipped rather than inventing an identity.
+
+## Security note — approved-answer export
+
+The GitHub exporter writes answer content to the configured repository. Because a public repository is publicly readable, export is disabled by default through JUNI_APPROVED_ANSWER_EXPORT_ENABLED=false. Only enable it after reviewing the target repository and the approved answers intended for publication.
+
 Step 5 can expand the Gemini Live browser experience using secure session credentials.
 
 Step 2 intentionally stops before unrestricted autonomous learning, Internet access, browser automation, full voice/video UX, and a distributed blockchain network.
