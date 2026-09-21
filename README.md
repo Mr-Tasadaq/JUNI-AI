@@ -226,6 +226,16 @@ Operational variables:
 - `JUNI_RESEARCH_BLOCKED_DOMAINS`
 - `JUNI_RESEARCH_DEFAULT_TENANT_ID`
 - `JUNI_RESEARCH_DEFAULT_USER_ID`
+- `JUNI_VOICE_TOKEN_TTL_SECONDS`
+- `JUNI_VOICE_NEW_SESSION_TTL_SECONDS`
+- `JUNI_VOICE_MAX_SESSION_MINUTES`
+- `JUNI_VOICE_CAPTIONS_ENABLED`
+- `JUNI_VOICE_AUDIO_CHUNK_MS`
+- `JUNI_VOICE_OUTPUT_BUFFER_LIMIT_MS`
+- `JUNI_VOICE_MAX_RECONNECT_ATTEMPTS`
+- `JUNI_VOICE_RECONNECT_BASE_MS`
+- `JUNI_VOICE_DEFAULT_TENANT_ID`
+- `JUNI_VOICE_DEFAULT_USER_ID`
 
 Never commit real credential values.
 
@@ -287,7 +297,10 @@ Set provider keys and the server access token in the deployment environment. Do 
 ```
 .
 ├── api/
-│   └── chat.js
+│   ├── chat.js
+│   ├── research.js
+│   ├── voice-token.js
+│   └── voice-events.js
 ├── core/
 │   ├── app.js
 │   ├── config.js
@@ -304,9 +317,21 @@ Set provider keys and the server access token in the deployment environment. Do 
 │   └── voice.js
 ├── docs/
 │   ├── ARCHITECTURE.md
-│   └── SECURITY.md
+│   ├── RESEARCH.md
+│   ├── SECURITY.md
+│   └── VOICE.md
 ├── lib/
 │   └── rate-limit.js
+├── voice/
+│   ├── audio-input.js
+│   ├── audio-output.js
+│   ├── audio-resampler.js
+│   ├── audio-worklet.js
+│   ├── client.js
+│   ├── memory-hooks.js
+│   ├── protocol.js
+│   ├── token-route.js
+│   └── tools.js
 ├── providers/
 │   ├── anthropic.js
 │   ├── base.js
