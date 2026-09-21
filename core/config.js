@@ -139,6 +139,11 @@ export function loadConfig(env = process.env) {
       memoryDays: intOrDefault(env.JUNI_RETENTION_MEMORY_DAYS, 0, 0),
       researchDays: intOrDefault(env.JUNI_RETENTION_RESEARCH_DAYS, 30, 0),
     },
+    identity: {
+      fixedTenantId: stringOrUndefined(env.JUNI_IDENTITY_DEFAULT_TENANT_ID),
+      fixedUserId: stringOrUndefined(env.JUNI_IDENTITY_DEFAULT_USER_ID),
+      allowIdentityHeaders: boolOrDefault(env.JUNI_IDENTITY_ALLOW_HEADERS, false),
+    },
     security: {
       apiToken: stringOrUndefined(env.JUNI_API_TOKEN),
       allowedOrigin: stringOrUndefined(env.JUNI_ALLOWED_ORIGIN),
