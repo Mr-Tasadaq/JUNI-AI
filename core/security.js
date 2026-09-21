@@ -23,6 +23,13 @@ function parseCookies(header) {
   return result;
 }
 
+export function requestClientKey(req) {
+  return req?.ip
+    || req?.headers?.["x-real-ip"]
+    || req?.headers?.["x-forwarded-for"]?.split(",")[0]?.trim()
+    || "unknown";
+}
+
 export function authorizeRequest(req, expectedToken, { cookieName = "juni_auth" } = {}) {
   if (!expectedToken) return { allowed: false, reason: "server_not_configured" };
   const header = req?.headers?.authorization ?? "";
