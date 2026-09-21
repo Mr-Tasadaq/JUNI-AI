@@ -112,22 +112,26 @@ Tool orchestration for streaming is intentionally not hidden behind a partial pr
 
 ## Gemini Live voice
 
-`providers/gemini-live.js` defines the future realtime boundary around Gemini Live.
+Step 4 implements the real-time voice boundary with a provider-neutral core and Gemini-specific transport isolated in the Live provider/browser client.
 
-It supports the architecture for:
+The live path is:
 
-- configurable Live model
-- microphone/audio chunks
-- video chunks
-- realtime text
-- audio output callbacks
-- interruption/barge-in hooks
-- tool responses
-- session lifecycle
-- reconnect by session recreation
-- errors and close callbacks
+MICROPHONE → 16 kHz PCM16 → Gemini Live constrained WebSocket → 24 kHz PCM16 → Web Audio playback
 
-No fake voice pipeline is used.
+The browser receives only a short-lived Gemini ephemeral token from `POST /api/voice-token`. The long-lived Gemini API key remains server-side. The token constrains the Live model, AUDIO response modality, Juni identity, session resumption, context-window compression, and the allowlisted realtime tools.
+
+The browser voice client uses:
+- AudioWorklet for microphone capture and actual resampling to 16 kHz
+- an isolated ScriptProcessor compatibility fallback
+- scheduled PCM playback with bounded buffering
+- interruption/barged-in playback cancellation
+- session resumption and bounded GoAway reconnect
+- optional temporary input/output captions
+- safe allowlisted tool calls
+
+The core voice abstraction remains provider-neutral. Google-specific WebSocket message parsing and token creation remain outside `core/voice.js`.
+
+Voice metadata uses the existing Step 2 storage/quota/provenance layer. Raw continuous microphone and model audio are not persisted by default.
 
 Google currently documents `gemini-3.8-live` as the default option for most low-latency voice agent experiences, while `gemini-3.1-flash-live-preview` is a legacy preview model. The application therefore keeps `GEMINI_LIVE_MODEL` configurable instead of hard-coding the legacy model.
 
@@ -204,11 +208,9 @@ It is explicitly **not** an intelligence engine and does not make Juni smarter.
 
 Step 2 can add the durable memory engine against the provenance/event contracts.
 
-Step 3 now provides controlled web research and knowledge acquisition. Step 4 can add authenticated memory/research HTTP identity hardening and/or an independent durable audit checkpoint; those future changes must preserve the existing provenance boundary.
+Step 3 now provides controlled web research and knowledge acquisition. Step 4 now provides the realtime Gemini Live audio interface, constrained ephemeral authentication, safe function calling, interruption, session resumption, and bounded reconnect.
 
-Step 5 can expand the Gemini Live voice UX and realtime tool orchestration.
-
-Step 6+ can add documents, embeddings, media intelligence, and additional external tools.
+Step 5+ can add richer multimodal workflows, deeper document/media intelligence, and additional external tools while preserving the current security and provenance contracts.
 
 The Step 1 boundary is deliberate: later modules should attach to the core contracts rather than bypass them.
 
