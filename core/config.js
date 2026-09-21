@@ -144,6 +144,18 @@ export function loadConfig(env = process.env) {
       fixedUserId: stringOrUndefined(env.JUNI_IDENTITY_DEFAULT_USER_ID),
       allowIdentityHeaders: boolOrDefault(env.JUNI_IDENTITY_ALLOW_HEADERS, false),
     },
+    answerFirst: {
+      enabled: boolOrDefault(env.JUNI_ANSWER_FIRST_ENABLED, true),
+      semanticThreshold: Math.max(
+        0.8,
+        Math.min(
+          0.95,
+          Number.isFinite(Number(env.JUNI_ANSWER_FIRST_SEMANTIC_THRESHOLD))
+            ? Number(env.JUNI_ANSWER_FIRST_SEMANTIC_THRESHOLD)
+            : 0.92
+        )
+      ),
+    },
     security: {
       apiToken: stringOrUndefined(env.JUNI_API_TOKEN),
       allowedOrigin: stringOrUndefined(env.JUNI_ALLOWED_ORIGIN),
