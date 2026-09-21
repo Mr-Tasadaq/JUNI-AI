@@ -31,7 +31,7 @@ The current Step 1 foundation contains:
 
 ## Provider contract
 
-Each provider adapter exposes:
+Each provider adapter exposes the Step 1 contract plus optional research methods:
 
 - `name`
 - `defaultModel`
@@ -39,6 +39,8 @@ Each provider adapter exposes:
 - `health()`
 - `generate(request, options)`
 - `stream(request, options)`
+- `researchCapabilities(model)` when web research is supported
+- `research(request)` for provider-native search or URL context
 
 The core does not call vendor SDK methods directly.
 
@@ -82,7 +84,7 @@ Tools use a neutral internal definition:
 
 Provider adapters translate those definitions into vendor-specific function/tool declarations.
 
-Step 1 does not implement web search, browsing, memory, calendar, or other production tools. The registry is the extension point for later steps.
+Step 3 adds controlled web research outside the generic Tool Registry because provider-native search tools have different execution contracts. The research layer still records a neutral tool identity (for example web.search and web.retrieve), preserves provider metadata, and keeps provider SDK calls inside adapters.
 
 ## Multimodal
 
@@ -148,7 +150,7 @@ The human-child-learning concept is only a software design metaphor. The code ma
 
 ## Trust and safety
 
-Step 1 enforces these boundaries:
+Step 1 and Step 2 enforce these boundaries:
 
 - provider keys remain server-side
 - authorization tokens are not returned in event payloads
@@ -202,12 +204,26 @@ It is explicitly **not** an intelligence engine and does not make Juni smarter.
 
 Step 2 can add the durable memory engine against the provenance/event contracts.
 
-Step 3 can add research/web tools.
-
-Step 4 can add the durable audit/provenance ledger or blockchain-backed implementation.
+Step 3 now provides controlled web research and knowledge acquisition. Step 4 can add authenticated memory/research HTTP identity hardening and/or an independent durable audit checkpoint; those future changes must preserve the existing provenance boundary.
 
 Step 5 can expand the Gemini Live voice UX and realtime tool orchestration.
 
 Step 6+ can add documents, embeddings, media intelligence, and additional external tools.
 
 The Step 1 boundary is deliberate: later modules should attach to the core contracts rather than bypass them.
+
+
+## Step 3 research flow
+
+1. `POST /api/research` authenticates with the existing bearer gate and resolves a secure tenant/user scope.
+2. The request model infers/validates research mode and freshness constraints.
+3. The research-aware router selects a configured provider/model that advertises the requested web capability and is currently healthy.
+4. Provider-native search runs server-side; direct URLs use SafeWebRetriever, with Gemini URL Context used when available for URL analysis.
+5. Sources are normalized, canonicalized, deduplicated, hashed, and persisted with provenance metadata.
+6. Evidence is extracted as bounded excerpts. Web text is explicitly marked untrusted and is never interpreted as instructions.
+7. Synthesis receives only bounded evidence and a list of source identities. Claims are linked to evidence and validated before citations are persisted.
+8. Knowledge Acquisition creates a candidate only when explicitly requested. Approval creates a versioned Step 2 knowledge record; unapproved research does not become permanent memory.
+
+## Step 3 storage
+
+Research sessions, operations, source content, evidence, claims, citations, candidates, provenance, and research caches count toward the existing 10 GiB logical budget. Retrieval and synthesis are bounded; the complete research store is never loaded into model context.

@@ -347,3 +347,168 @@ CREATE TABLE IF NOT EXISTS ledger_events (
 );
 CREATE INDEX IF NOT EXISTS idx_ledger_scope_sequence
   ON ledger_events (tenant_id, sequence);
+
+
+CREATE TABLE IF NOT EXISTS research_sessions (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  query TEXT NOT NULL,
+  mode TEXT NOT NULL,
+  requested_freshness TEXT NOT NULL,
+  output_format TEXT NOT NULL,
+  citation_required INTEGER NOT NULL,
+  allow_knowledge_candidate INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  completed_at TEXT,
+  selected_provider TEXT,
+  selected_model TEXT,
+  answer TEXT,
+  result_json TEXT NOT NULL,
+  warnings_json TEXT NOT NULL,
+  errors_json TEXT NOT NULL,
+  tools_json TEXT NOT NULL,
+  providers_json TEXT NOT NULL,
+  models_json TEXT NOT NULL,
+  retention_expires_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_research_sessions_scope ON research_sessions (tenant_id, user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_research_sessions_status ON research_sessions (tenant_id, user_id, status);
+
+CREATE TABLE IF NOT EXISTS research_operations (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  operation_type TEXT NOT NULL,
+  status TEXT NOT NULL,
+  query TEXT,
+  url TEXT,
+  provider TEXT,
+  model TEXT,
+  tool TEXT,
+  started_at TEXT NOT NULL,
+  completed_at TEXT,
+  attempts INTEGER NOT NULL DEFAULT 1,
+  cache_hit INTEGER NOT NULL DEFAULT 0,
+  error_code TEXT,
+  usage_json TEXT NOT NULL,
+  metadata_json TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_research_ops_session ON research_operations (tenant_id, user_id, session_id, started_at DESC);
+
+CREATE TABLE IF NOT EXISTS research_sources (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  url TEXT NOT NULL,
+  canonical_url TEXT NOT NULL,
+  title TEXT,
+  domain TEXT,
+  publisher TEXT,
+  author TEXT,
+  publication_date TEXT,
+  retrieved_at TEXT NOT NULL,
+  content_type TEXT,
+  language TEXT,
+  status TEXT NOT NULL,
+  source_type TEXT NOT NULL,
+  primary_source_candidate INTEGER NOT NULL DEFAULT 0,
+  relevance_score REAL NOT NULL DEFAULT 0,
+  corroboration_count INTEGER NOT NULL DEFAULT 0,
+  content_hash TEXT,
+  metadata_hash TEXT,
+  provider TEXT,
+  tool TEXT,
+  content TEXT,
+  content_size_bytes INTEGER NOT NULL DEFAULT 0,
+  metadata_json TEXT NOT NULL,
+  duplicate_of_source_id TEXT,
+  size_bytes INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_research_sources_session ON research_sources (tenant_id, user_id, session_id);
+CREATE INDEX IF NOT EXISTS idx_research_sources_canonical ON research_sources (tenant_id, user_id, canonical_url);
+CREATE INDEX IF NOT EXISTS idx_research_sources_hash ON research_sources (tenant_id, user_id, content_hash);
+
+CREATE TABLE IF NOT EXISTS research_evidence (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  source_id TEXT NOT NULL,
+  evidence_type TEXT NOT NULL,
+  excerpt TEXT NOT NULL,
+  start_offset INTEGER,
+  end_offset INTEGER,
+  locator TEXT,
+  extraction_basis TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_research_evidence_source ON research_evidence (tenant_id, user_id, source_id);
+CREATE INDEX IF NOT EXISTS idx_research_evidence_session ON research_evidence (tenant_id, user_id, session_id);
+
+CREATE TABLE IF NOT EXISTS research_claims (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  claim_text TEXT NOT NULL,
+  claim_type TEXT NOT NULL,
+  status TEXT NOT NULL,
+  confidence REAL,
+  rationale TEXT,
+  created_at TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_research_claims_session ON research_claims (tenant_id, user_id, session_id);
+
+CREATE TABLE IF NOT EXISTS research_citations (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  claim_id TEXT,
+  source_id TEXT NOT NULL,
+  relation TEXT NOT NULL,
+  evidence_ids_json TEXT NOT NULL,
+  citation_type TEXT NOT NULL,
+  cited_excerpt TEXT,
+  start_index INTEGER,
+  end_index INTEGER,
+  provider TEXT,
+  model TEXT,
+  native_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_research_citations_session ON research_citations (tenant_id, user_id, session_id);
+CREATE INDEX IF NOT EXISTS idx_research_citations_claim ON research_citations (tenant_id, user_id, claim_id);
+
+CREATE TABLE IF NOT EXISTS knowledge_candidates (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  proposed_title TEXT,
+  proposed_knowledge_json TEXT NOT NULL,
+  source_ids_json TEXT NOT NULL,
+  evidence_ids_json TEXT NOT NULL,
+  confidence REAL,
+  rationale TEXT,
+  provenance_ref TEXT,
+  status TEXT NOT NULL,
+  candidate_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_knowledge_candidates_scope ON knowledge_candidates (tenant_id, user_id, status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_knowledge_candidates_session ON knowledge_candidates (tenant_id, user_id, session_id);

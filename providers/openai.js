@@ -101,6 +101,37 @@ export function createOpenAIProvider(config, { identity } = {}) {
       ]);
     },
 
+    researchCapabilities(model = providerConfig.defaultModel) {
+      const override = config.app.modelOverrides?.openai?.[model]?.researchCapabilities;
+      return Object.freeze(override ?? ["webSearch", "nativeCitations"]);
+    },
+
+    async research(request) {
+      requireApiKey("openai", providerConfig.apiKey);
+      const OpenAI = await asyncLoadOpenAI();
+      client ??= new OpenAI({ apiKey: providerConfig.apiKey, timeout: providerConfig.timeoutMs });
+      const filters = {};
+      if (request.allowedDomains?.length) filters.allowed_domains = request.allowedDomains;
+      if (request.blockedDomains?.length) filters.blocked_domains = request.blockedDomains;
+      const timed = withAbortTimeout(request.signal, request.timeoutMs ?? config.research.providerTimeoutMs);
+      try {
+        const response = await client.responses.create({
+          model: request.model || providerConfig.defaultModel,
+          input: String(request.query ?? ""),
+          tools: [{ type: config.research.openaiSearchToolType, ...(Object.keys(filters).length ? { filters } : {}) }],
+          include: ["web_search_call.action.sources"],
+          max_output_tokens: request.maxOutputTokens ?? 1200,
+        }, { signal: timed.signal });
+        return extractOpenAIResearch(response);
+      } catch (error) {
+        throw new ProviderError("OpenAI web research failed.", {
+          provider: "openai", status: error?.status, code: error?.code || error?.name || "OPENAI_RESEARCH_ERROR",
+          retryable: error?.retryable || error?.status === 408 || error?.status === 409 || error?.status === 429 || (error?.status >= 500),
+          cause: error,
+        });
+      } finally { timed.cleanup(); }
+    },
+
     async health() {
       return {
         available: Boolean(providerConfig.enabled && providerConfig.apiKey),
@@ -206,3 +237,46 @@ export function createOpenAIProvider(config, { identity } = {}) {
 }
 
 export { CAPABILITIES };
+
+
+function extractOpenAIResearch(response) {
+  const sources = [];
+  const nativeCitations = [];
+  const searchQueries = [];
+  for (const item of response?.output ?? []) {
+    if (item?.type === "web_search_call") {
+      const action = item.action ?? {};
+      if (action.query) searchQueries.push(action.query);
+      if (Array.isArray(action.queries)) searchQueries.push(...action.queries);
+      for (const source of action.sources ?? []) sources.push({
+        url: source.url, title: source.title ?? null,
+        publisher: source.publisher ?? null, publishedAt: source.published_at ?? null,
+      });
+    }
+    for (const block of item?.content ?? []) {
+      for (const annotation of block?.annotations ?? []) {
+        if (annotation?.type === "url_citation") {
+          nativeCitations.push({
+            url: annotation.url, title: annotation.title ?? null,
+            startIndex: annotation.start_index ?? annotation.startIndex ?? null,
+            endIndex: annotation.end_index ?? annotation.endIndex ?? null,
+            native: annotation,
+          });
+          if (annotation.url) sources.push({ url: annotation.url, title: annotation.title ?? null });
+        }
+      }
+    }
+  }
+  return {
+    text: response?.output_text ?? "",
+    sources: dedupeByUrl(sources),
+    nativeCitations,
+    searchQueries: [...new Set(searchQueries.filter(Boolean))],
+    usage: response?.usage ?? null,
+    model: response?.model ?? null,
+  };
+}
+function dedupeByUrl(items) {
+  const seen = new Set();
+  return items.filter((item) => item?.url && !seen.has(item.url) && seen.add(item.url));
+}

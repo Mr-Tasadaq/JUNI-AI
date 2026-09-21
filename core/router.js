@@ -107,6 +107,62 @@ export class ModelRouter {
     return { request: normalized, candidates: scored };
   }
 
+
+  async researchCandidates(request, { operation = "search" } = {}) {
+    const base = normalizeRequest(request, { model: this.#config.app.defaultModel });
+    const normalized = {
+      ...base,
+      query: String(request?.query ?? request?.message ?? ""),
+      urls: Array.isArray(request?.urls) ? request.urls : [],
+      allowedDomains: Array.isArray(request?.allowedDomains) ? request.allowedDomains : [],
+      blockedDomains: Array.isArray(request?.blockedDomains) ? request.blockedDomains : [],
+      maxSearchQueries: request?.maxSearchQueries,
+      maxSearchUses: request?.maxSearchUses,
+      timeoutMs: request?.timeoutMs,
+    };
+    const configured = [
+      ...(normalized.provider ? [normalized.provider] : []),
+      ...(this.#config.app.providerPriority ?? []),
+      this.#config.app.defaultProvider,
+      ...(this.#config.app.fallbackProviders ?? []),
+    ];
+    const unique = [...new Set(configured.filter(Boolean))];
+    const required = operation === "url_context" ? "urlContext" : "webSearch";
+    const scored = [];
+    for (let index=0; index<unique.length; index+=1) {
+      const name=unique[index]; const provider=this.#providers.get(name); if(!provider?.researchCapabilities) continue;
+      const health=await provider.health({model:normalized.model,signal:normalized.signal});
+      const model=normalized.model||provider.defaultModel;
+      const capabilities=provider.researchCapabilities(model);
+      if(!capabilities.includes(required)) continue;
+      const score=(health.available?this.#config.routing.availabilityWeight:0)+capabilities.length*this.#config.routing.capabilityWeight+Math.max(0,20-index)*this.#config.routing.priorityWeight;
+      scored.push({provider,model,health,capabilities,score,order:index});
+    }
+    scored.sort((a,b)=>b.score-a.score||a.order-b.order);
+    return {request:normalized,candidates:scored};
+  }
+
+  async research(request, { operation = "search" } = {}) {
+    const {request:normalized,candidates}=await this.researchCandidates({...request,task:"research"},{operation});
+    const attempts=[]; const maxRetries=this.#config.app.maxProviderRetries??1;
+    const retryDelay=this.#config.app.retryBaseDelayMs??250;
+    for(const candidate of candidates){
+      if(!candidate.health.available) continue;
+      for(let retry=0;retry<=maxRetries;retry+=1){
+        try{
+          const response=await candidate.provider.research({...normalized,model:candidate.model,operation},{timeoutMs:candidate.health.timeoutMs});
+          return {...response,provider:candidate.provider.name,model:response.model??candidate.model,researchCapabilities:candidate.capabilities,researchAttempts:attempts};
+        }catch(error){
+          const normalizedError=normalizeProviderError(candidate.provider.name,error);
+          attempts.push({provider:candidate.provider.name,model:candidate.model,retry,code:normalizedError.code,retryable:normalizedError.retryable});
+          if(!normalizedError.retryable||retry>=maxRetries) break;
+          await sleep(retryDelay*(2**retry));
+        }
+      }
+    }
+    throw new RouterError("No available research provider could complete the operation.",{attempts});
+  }
+
   async select(request) {
     const { request: normalized, candidates } = await this.candidates(request);
     const selected = candidates.find((candidate) => candidate.health.available);
