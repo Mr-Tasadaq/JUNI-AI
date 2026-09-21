@@ -210,6 +210,7 @@ export function loadConfig(env = process.env) {
     },
     observability: {
       maxEventPayloadBytes: intOrDefault(env.JUNI_MAX_EVENT_PAYLOAD_BYTES, 8_192, 256),
+      metricsMaxSamples: intOrDefault(env.JUNI_METRICS_MAX_SAMPLES, 500, 50),
     },
     provenance: {
       storageBudgetBytes: intOrDefault(env.JUNI_STORAGE_BUDGET_BYTES, 10 * 1024 * 1024 * 1024, 1),
