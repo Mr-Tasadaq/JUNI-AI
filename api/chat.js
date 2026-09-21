@@ -133,12 +133,26 @@ async function streamResponse(res, iterable, requestId) {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    res.setHeader("Allow", "POST");
-    return json(res, 405, { error: "Method not allowed." });
+  const app = getApplication();
+
+  if (!checkOrigin(req.headers.origin, app.config.security.allowedOrigin)) {
+    return json(res, 403, { error: "Origin not allowed." });
   }
 
-  const app = getApplication();
+  if (req.method === "OPTIONS") {
+    res.setHeader("Allow", "POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Origin", app.config.security.allowedOrigin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    res.status(204);
+    return res.end();
+  }
+
+  if (req.method !== "POST") {
+    res.setHeader("Allow", "POST, OPTIONS");
+    return json(res, 405, { error: "Method not allowed." });
+  }
 
   if (!checkOrigin(req.headers.origin, app.config.security.allowedOrigin)) {
     return json(res, 403, { error: "Origin not allowed." });
