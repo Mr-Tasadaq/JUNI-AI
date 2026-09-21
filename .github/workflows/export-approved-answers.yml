@@ -1,0 +1,38 @@
+name: Export approved JUNI-AI answers
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Export approved answers
+        run: node scripts/export-approved-answers.js
+        env:
+          JUNI_DATABASE_URL: ${{ secrets.JUNI_DATABASE_URL }}
+          JUNI_DATABASE_AUTH_TOKEN: ${{ secrets.JUNI_DATABASE_AUTH_TOKEN }}
+          JUNI_GITHUB_TOKEN: ${{ secrets.JUNI_GITHUB_TOKEN }}
+          JUNI_GITHUB_REPOSITORY: ${{ github.repository }}
+          JUNI_EXPORT_TENANT_ID: ${{ secrets.JUNI_EXPORT_TENANT_ID }}
+          JUNI_EXPORT_USER_ID: ${{ secrets.JUNI_EXPORT_USER_ID }}
+          JUNI_GITHUB_BRANCH: ${{ secrets.JUNI_GITHUB_BRANCH }}
+          JUNI_GITHUB_INDEX_PATH: ${{ secrets.JUNI_GITHUB_INDEX_PATH }}
+          JUNI_EXPORT_BATCH_SIZE: ${{ secrets.JUNI_EXPORT_BATCH_SIZE }}
