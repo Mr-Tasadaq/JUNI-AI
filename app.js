@@ -304,7 +304,7 @@ async function requestAssistant(text, history, researchEnabled = false, allowAut
 
     if (response.status === 401) {
       if (!allowAuthRetry) {
-        return "That access code was rejected. Use “Set access code” in the sidebar to update it.";
+        return { reply: "That access code was rejected. Use “Set access code” in the sidebar to update it.", research: null };
       }
 
       const supplied = window.prompt("Enter your JUNI-AI access code:");
@@ -312,7 +312,7 @@ async function requestAssistant(text, history, researchEnabled = false, allowAut
         localStorage.setItem(AUTH_KEY, supplied.trim());
         return requestAssistant(text, history, researchEnabled, false);
       }
-      return "JUNI-AI needs an access code for the server API. Use “Set access code” in the sidebar.";
+      return { reply: "JUNI-AI needs an access code for the server API. Use “Set access code” in the sidebar.", research: null };
     }
 
     let errorMessage = `The assistant service returned HTTP ${response.status}.`;
@@ -322,9 +322,9 @@ async function requestAssistant(text, history, researchEnabled = false, allowAut
     } catch {
       // Keep the generic HTTP error.
     }
-    return errorMessage;
+    return { reply: errorMessage, research: null };
   } catch {
-    return demoReply(text);
+    return { reply: demoReply(text), research: null };
   }
 }
 
