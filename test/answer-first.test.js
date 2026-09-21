@@ -143,3 +143,79 @@ test("chat serves an exact saved answer before provider availability is checked"
   assert.equal(tracked.hitCount, 1);
   await verify.db.client.close?.();
 });
+
+test("approved answer indexing creates a semantic vector and rejects weak matches below the configured threshold", async (t) => {
+  const embedder = async ({ text }) => ({
+    vector: text.includes("install") ? [1, 0] : [0, 1],
+    provider: "test",
+    model: "test-embedding",
+  });
+
+  const config = loadConfig({
+    JUNI_DATABASE_URL: "file:/tmp/juni-answer-first-semantic-" + randomUUID() + ".db",
+    JUNI_DATABASE_AUTH_TOKEN: "",
+    JUNI_STORAGE_BUDGET_BYTES: String(20 * 1024 * 1024),
+    JUNI_ANSWER_FIRST_SEMANTIC_THRESHOLD: "0.92",
+  });
+  const app = createJuniMemoryApplication({ config, answerEmbedder: embedder });
+  await app.ready();
+  t.after(async () => {
+    try { await app.db.client.close?.(); } catch {}
+  });
+
+  const scope = { tenantId: "tenant-semantic", userId: "user-semantic" };
+  const candidate = await app.knowledge.createAnswerCandidate(scope, {
+    question: "How do I install JUNI-AI?",
+    answer: "Use the locked package manifest.",
+    provider: "openai",
+    model: "gpt-5.5",
+    sourceRef: "request-semantic",
+    retentionExpiresAt: new Date(Date.now() + 7 * 86400000).toISOString(),
+  });
+
+  assert.equal(candidate.status, "candidate");
+
+  const approved = await app.knowledge.approveAnswerCandidate(scope, candidate.id, {
+    approvedBy: "user-semantic",
+  });
+  assert.equal(approved.status, "important");
+
+  const vectorRows = await app.db.client.execute({
+    sql: "SELECT object_type, object_id FROM embeddings WHERE tenant_id = ? AND user_id = ? AND object_type = 'knowledge' AND object_id = ? AND deleted_at IS NULL",
+    args: [scope.tenantId, scope.userId, candidate.id],
+  });
+  assert.equal(vectorRows.rows.length, 1);
+
+  const weak = await app.knowledge.findSemanticSavedAnswer(scope, "a different question", {
+    minScore: 0.95,
+  });
+  assert.equal(weak, null);
+
+  const strong = await app.knowledge.findSemanticSavedAnswer(scope, "please explain how to install this", {
+    minScore: 0.8,
+  });
+  assert.equal(strong?.knowledgeId, candidate.id);
+  assert.ok(strong.score >= 0.8);
+
+  const events = await app.ledger.list(scope, { limit: 20 });
+  assert.ok(events.some((event) => event.event_type === "answer_approved"));
+  assert.ok(events.some((event) => event.event_type === "answer_indexed"));
+});
+
+test("answer misses are auditable and do not expose the original question", async (t) => {
+  const app = await makeApp();
+  t.after(async () => {
+    try { await app.db.client.close?.(); } catch {}
+  });
+
+  const scope = { tenantId: "tenant-miss", userId: "user-miss" };
+  await app.knowledge.recordAnswerMiss(scope, "A private question that should not enter logs.", {
+    reason: "no_match",
+  });
+
+  const events = await app.ledger.list(scope, { limit: 10 });
+  const miss = events.find((event) => event.event_type === "answer_cache_miss");
+  assert.ok(miss);
+  assert.equal(typeof miss.payload.questionHash, "string");
+  assert.equal(miss.payload.questionHash.includes("private"), false);
+});

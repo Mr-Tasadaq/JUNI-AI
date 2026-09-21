@@ -155,6 +155,7 @@ export function loadConfig(env = process.env) {
             : 0.92
         )
       ),
+      embeddingModel: stringOrUndefined(env.JUNI_ANSWER_FIRST_EMBEDDING_MODEL) ?? "text-embedding-3-small",
     },
     security: {
       apiToken: stringOrUndefined(env.JUNI_API_TOKEN),

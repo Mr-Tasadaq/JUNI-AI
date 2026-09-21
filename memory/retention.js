@@ -55,8 +55,12 @@ export class RetentionService {
         WHERE tenant_id = ? AND user_id = ? AND expires_at IS NOT NULL AND expires_at <= ?
         UNION ALL
         SELECT 'research', id, retention_expires_at FROM research_results
-        WHERE tenant_id = ? AND user_id = ? AND retention_expires_at IS NOT NULL AND retention_expires_at <= ?`,
+        WHERE tenant_id = ? AND user_id = ? AND retention_expires_at IS NOT NULL AND retention_expires_at <= ?
+        UNION ALL
+        SELECT 'answer_index', knowledge_id, expires_at FROM answer_index
+        WHERE tenant_id = ? AND user_id = ? AND expires_at IS NOT NULL AND expires_at <= ?`,
       args: [
+        scope.tenantId, scope.userId, timestamp,
         scope.tenantId, scope.userId, timestamp,
         scope.tenantId, scope.userId, timestamp,
         scope.tenantId, scope.userId, timestamp,
@@ -84,7 +88,9 @@ export class RetentionService {
         ? "conversation_context"
         : candidate.record_type === "cache"
           ? "cache_entries"
-          : "research_results";
+          : candidate.record_type === "answer_index"
+            ? "answer_index"
+            : "research_results";
 
       await this.#client.execute({
         sql: "DELETE FROM " + table + " WHERE tenant_id = ? AND user_id = ? AND id = ?",
