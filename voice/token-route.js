@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { authorizeRequest, checkOrigin } from "../core/security.js";
-import { checkRateLimit } from "../lib/rate-limit.js";
 import { resolveVoiceScope } from "./http-identity.js";
 
 export async function handleVoiceToken(req, res, current) {
