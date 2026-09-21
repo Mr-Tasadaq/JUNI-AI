@@ -25,9 +25,6 @@ export default async function handler(req, res) {
     res.setHeader("Allow", "POST");
     return send(res, 405, { error: "Method not allowed.", code: "VOICE_METHOD_NOT_ALLOWED" });
   }
-  if (!current.config.voice.enabled) {
-    return send(res, 503, { error: "Real-time voice is disabled.", code: "VOICE_FEATURE_DISABLED" });
-  }
   if (!checkOrigin(req.headers.origin, current.config.security.allowedOrigin)) {
     return send(res, 403, { error: "Origin not allowed.", code: "VOICE_ORIGIN_REJECTED" });
   }
@@ -37,6 +34,10 @@ export default async function handler(req, res) {
       error: auth.reason === "server_not_configured" ? "The server is not configured yet. Add JUNI_API_TOKEN." : "Authentication required.",
       code: auth.reason === "server_not_configured" ? "VOICE_SERVER_NOT_CONFIGURED" : "VOICE_AUTH_REQUIRED",
     });
+  }
+
+  if (!current.config.voice.enabled) {
+    return send(res, 503, { error: "Real-time voice is disabled.", code: "VOICE_FEATURE_DISABLED" });
   }
 
   const limit = Number.parseInt(process.env.JUNI_RATE_LIMIT || "20", 10);
@@ -103,6 +104,15 @@ export default async function handler(req, res) {
       reconnectBaseMs: current.config.voice.reconnectBaseMs,
     });
   } catch (error) {
+    try {
+      if (await current.memory.voiceSessions.get(scope, sessionId)) {
+        await current.memory.voiceSessions.recordEvent(scope, sessionId, {
+          type: "voice_session_failed",
+          code: error?.code || "VOICE_TOKEN_FAILED",
+          reason: "token_creation_failed",
+        });
+      }
+    } catch {}
     console.error("JUNI voice token error", {
       code: error?.code || "VOICE_TOKEN_FAILED",
       requestId,
