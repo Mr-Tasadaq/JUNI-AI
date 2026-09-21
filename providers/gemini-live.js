@@ -1,6 +1,7 @@
 import { buildSystemIdentity } from "../core/identity.js";
 import { ProviderError } from "../core/errors.js";
 import { requireApiKey } from "./base.js";
+import { VOICE_TOOL_DECLARATIONS } from "../voice/tools.js";
 
 async function asyncLoadGeminiLive() {
   const module = await import("@google/genai");
@@ -99,7 +100,11 @@ export function createGeminiLiveProvider(config, { identity = buildSystemIdentit
       const now = Date.now();
       const expireTime = new Date(now + config.voice.tokenTtlSeconds * 1000).toISOString();
       const newSessionExpireTime = new Date(now + config.voice.newSessionTtlSeconds * 1000).toISOString();
-      const liveConfig = voiceLiveConfig({ identity, captionsEnabled });
+      const liveConfig = voiceLiveConfig({
+        identity,
+        toolDeclarations: VOICE_TOOL_DECLARATIONS,
+        captionsEnabled,
+      });
       try {
         const response = await client.authTokens.create({
           config: {
