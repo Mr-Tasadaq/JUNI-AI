@@ -118,6 +118,7 @@ test("multi-source research and deep research issue multiple search steps",async
   const router=fakeResearchRouter({searchSources:(n)=>[{url:"https://example.com/source-"+n,title:"Source "+n}]});
   const app=await makeApp({router});
   const result=await app.research.run(scope,{query:"deep research topic",mode:"DEEP_RESEARCH",maxSearchQueries:3,maxSources:3});
+  console.log("STEP3_DEBUG", JSON.stringify({usage:result.usage,searchQueries:result.searchQueries,ops:(await app.research.operations(scope,result.researchSessionId)).map((x)=>({type:x.operation_type,query:x.query,cacheHit:x.cache_hit}))}));
   assert.equal(result.sources.length,3); assert.ok(result.searchQueries.length>=2); assert.equal(result.usage.searchCalls,3);
 });
 
