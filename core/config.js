@@ -162,6 +162,12 @@ export function loadConfig(env = process.env) {
       maxMessages: intOrDefault(env.JUNI_CONTEXT_MAX_MESSAGES, 20, 1),
       preferenceLimit: intOrDefault(env.JUNI_CONTEXT_PREFERENCE_LIMIT, 8, 1),
     },
+    tools: {
+      enabled: boolOrDefault(env.JUNI_TOOLS_ENABLED, true),
+      maxExecutionMs: intOrDefault(env.JUNI_TOOL_MAX_EXECUTION_MS, 15_000, 1_000),
+      maxResultBytes: intOrDefault(env.JUNI_TOOL_MAX_RESULT_BYTES, 64_000, 1_024),
+      requireApprovalForMutations: boolOrDefault(env.JUNI_TOOL_REQUIRE_APPROVAL_FOR_MUTATIONS, true),
+    },
     export: {
       approvedAnswersEnabled: boolOrDefault(env.JUNI_APPROVED_ANSWER_EXPORT_ENABLED, false),
     },
