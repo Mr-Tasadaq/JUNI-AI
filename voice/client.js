@@ -20,6 +20,7 @@ export class VoiceClient {
   #reconnectAttempts = 0;
   #reconnectTimer = null;
   #sessionTimer = null;
+  #levelFrame = null;
   #sessionStartedAt = 0;
   #stopped = false;
   #setupComplete = false;
@@ -117,6 +118,7 @@ export class VoiceClient {
     this.#stopped = true;
     if (this.#reconnectTimer) clearTimeout(this.#reconnectTimer);
     if (this.#sessionTimer) clearTimeout(this.#sessionTimer);
+    this.#stopLevelMonitor();
     this.#reconnectTimer = null;
     this.#sessionTimer = null;
     this.#audioOutput?.clear();
@@ -168,6 +170,36 @@ export class VoiceClient {
       onLevel: (level) => this.#emit("voice.input.level", { level }),
     });
     await this.#audioInput.start();
+    this.#startLevelMonitor();
+  }
+
+  #startLevelMonitor() {
+    if (this.#levelFrame != null) return;
+    const tick = () => {
+      if (this.#stopped) {
+        this.#levelFrame = null;
+        return;
+      }
+      const inputLevel = this.#audioInput?.getLevel?.() ?? 0;
+      const outputLevel = this.#audioOutput?.getLevel?.() ?? 0;
+      this.#emit("voice.activity.level", {
+        sessionId: this.#sessionId,
+        inputLevel: Math.max(0, Math.min(1, Number(inputLevel) || 0)),
+        outputLevel: Math.max(0, Math.min(1, Number(outputLevel) || 0)),
+        level: Math.max(Number(inputLevel) || 0, Number(outputLevel) || 0),
+      });
+      this.#levelFrame = typeof requestAnimationFrame === "function"
+        ? requestAnimationFrame(tick)
+        : setTimeout(tick, 80);
+    };
+    tick();
+  }
+
+  #stopLevelMonitor() {
+    if (this.#levelFrame == null) return;
+    if (typeof this.#levelFrame === "number" && typeof cancelAnimationFrame === "function") cancelAnimationFrame(this.#levelFrame);
+    else clearTimeout(this.#levelFrame);
+    this.#levelFrame = null;
   }
 
   async #getToken(force = false) {
