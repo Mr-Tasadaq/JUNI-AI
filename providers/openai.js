@@ -12,6 +12,12 @@ function toOpenAIContent(content) {
 
   return content.map((part) => {
     if (part.type === "text") return { type: "input_text", text: part.text };
+    if (part.type === "image") {
+      return {
+        type: "input_image",
+        image_url: "data:" + part.mimeType + ";base64," + part.data,
+      };
+    }
     if (part.type === "image_url") return { type: "input_image", image_url: part.url };
     if (part.type === "file") return { type: "input_file", file_id: part.fileId };
     if (part.type === "input_audio") return {
