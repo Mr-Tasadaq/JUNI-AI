@@ -27,6 +27,37 @@ function clientKey(req) {
     || "unknown";
 }
 
+function normalizeImageAttachments(value) {
+  if (value == null) return [];
+  if (!Array.isArray(value) || value.length > 4) {
+    throw new TypeError("At most 4 image attachments are allowed.");
+  }
+
+  const allowed = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+  const maxBytes = 3 * 1024 * 1024;
+  let totalBytes = 0;
+
+  return value.map((item) => {
+    if (!item || item.type !== "image" || typeof item.mimeType !== "string" || !allowed.has(item.mimeType)) {
+      throw new TypeError("Unsupported image attachment.");
+    }
+    if (typeof item.data !== "string" || !/^[A-Za-z0-9+/]+={0,2}$/.test(item.data)) {
+      throw new TypeError("Image attachment data must be base64.");
+    }
+
+    const bytes = Math.floor(item.data.length * 3 / 4) - (item.data.endsWith("==") ? 2 : item.data.endsWith("=") ? 1 : 0);
+    if (bytes <= 0 || bytes > maxBytes) throw new TypeError("Image attachment is too large.");
+    totalBytes += bytes;
+    if (totalBytes > 8 * 1024 * 1024) throw new TypeError("Total image attachments are too large.");
+
+    return {
+      type: "image",
+      mimeType: item.mimeType,
+      data: item.data,
+    };
+  });
+}
+
 function normalizeConversationId(value) {
   const id = String(value ?? "").trim();
   if (!id) return randomUUID();
@@ -149,6 +180,13 @@ export default async function handler(req, res) {
 
   const body = req.body ?? {};
   const message = typeof body.message === "string" ? body.message.trim() : "";
+  let attachments = [];
+  try {
+    attachments = normalizeImageAttachments(body.attachments);
+  } catch (error) {
+    return json(res, 400, { error: error.message });
+  }
+
   if (!message || message.length > app.config.security.maxMessageLength) {
     return json(res, 400, {
       error: "Message must be between 1 and " + app.config.security.maxMessageLength + " characters.",
@@ -208,6 +246,14 @@ export default async function handler(req, res) {
     if (error?.code !== "REQUEST_IDENTITY_NOT_CONFIGURED") {
       return json(res, 500, { error: "Request identity is invalid.", requestId });
     }
+  }
+
+  if (attachments.length) {
+    const currentUserContent = [
+      { type: "text", text: message },
+      ...attachments,
+    ];
+    request.messages.push({ role: "user", content: currentUserContent });
   }
 
   if (answerScope && app.config.context?.enabled) {
