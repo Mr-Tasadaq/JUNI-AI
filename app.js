@@ -111,6 +111,7 @@ elements.menuButton.addEventListener("click", () => {
 
 
 elements.voiceOpenButton?.addEventListener("click", () => {
+  if (voiceClient && !["idle","closed","error"].includes(voiceClient.state)) return;
   voicePanelOpen = !voicePanelOpen;
   if (elements.voicePanel) elements.voicePanel.hidden = !voicePanelOpen;
   elements.voiceOpenButton.setAttribute("aria-expanded", String(voicePanelOpen));
@@ -234,6 +235,9 @@ function handleVoiceEvent(event) {
     elements.voiceOrb?.style.setProperty("--voice-level", "0");
     if (data.reason === "user" || data.reason === "pagehide") clearVoiceError();
     updateVoiceControls();
+  }
+  if (type === "voice.session.started") {
+    elements.voiceOpenButton?.setAttribute("aria-expanded", "true");
   }
 }
 
