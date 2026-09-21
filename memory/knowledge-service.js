@@ -12,6 +12,23 @@ function requireApproval(status, approvedBy) {
   }
 }
 
+export function normalizeAnswerQuestion(question) {
+  const normalized = String(question ?? "")
+    .normalize("NFKC")
+    .replace(/[\u0000-\u001F\u007F]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+
+  if (!normalized) throw new TypeError("Answer question is required.");
+  if (normalized.length > 4_000) throw new TypeError("Answer question is too long.");
+  return normalized;
+}
+
+export function answerQuestionHash(question) {
+  return hashString(normalizeAnswerQuestion(question));
+}
+
 export class KnowledgeService {
   #client;
   #quota;
@@ -111,6 +128,265 @@ export class KnowledgeService {
       return parsed;
     } catch (error) {
       await tx.rollback();
+      throw error;
+    }
+  }
+
+  async createAnswerIndex(scope, {
+    knowledgeId,
+    question,
+    expiresAt = null,
+    cacheable = true,
+    provider = null,
+    model = null,
+  } = {}) {
+    assertScope(scope);
+
+    const normalizedQuestion = normalizeAnswerQuestion(question);
+    const questionHash = hashString(normalizedQuestion);
+    const knowledge = await this.get(scope, knowledgeId);
+
+    if (!knowledge) {
+      const error = new Error("Knowledge not found.");
+      error.code = "KNOWLEDGE_NOT_FOUND";
+      throw error;
+    }
+
+    if (!PROMOTED.has(knowledge.status)) {
+      const error = new Error("Only approved knowledge can be indexed as a saved answer.");
+      error.code = "KNOWLEDGE_APPROVAL_REQUIRED";
+      throw error;
+    }
+
+    if (expiresAt != null) {
+      const expiry = new Date(expiresAt);
+      if (Number.isNaN(expiry.getTime())) throw new TypeError("Invalid answer expiry.");
+      expiresAt = expiry.toISOString();
+    }
+
+    const id = knowledge.id;
+    const now = new Date().toISOString();
+    const sizeBytes = byteSize({
+      knowledgeId: id,
+      tenantId: scope.tenantId,
+      userId: scope.userId,
+      question: normalizedQuestion,
+      questionHash,
+      expiresAt,
+      cacheable: Boolean(cacheable),
+      provider,
+      model,
+      now,
+    });
+
+    const tx = await this.#client.transaction("write");
+    try {
+      const existing = await tx.execute({
+        sql: "SELECT size_bytes FROM answer_index WHERE tenant_id = ? AND user_id = ? AND knowledge_id = ?",
+        args: [scope.tenantId, scope.userId, id],
+      });
+      const delta = sizeBytes - Number(existing.rows[0]?.size_bytes ?? 0);
+      await this.#quota.assertWithinQuota(scope, delta, { category: "memory", executor: tx });
+
+      await tx.execute({
+        sql: `INSERT INTO answer_index (
+          knowledge_id, tenant_id, user_id, question_text, normalized_question,
+          question_hash, expires_at, cacheable, provider, model, hit_count,
+          last_hit_at, created_at, updated_at, size_bytes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)
+        ON CONFLICT(knowledge_id) DO UPDATE SET
+          question_text = excluded.question_text,
+          normalized_question = excluded.normalized_question,
+          question_hash = excluded.question_hash,
+          expires_at = excluded.expires_at,
+          cacheable = excluded.cacheable,
+          provider = excluded.provider,
+          model = excluded.model,
+          updated_at = excluded.updated_at,
+          size_bytes = excluded.size_bytes`,
+        args: [
+          id, scope.tenantId, scope.userId, String(question).trim(), normalizedQuestion,
+          questionHash, expiresAt, cacheable ? 1 : 0, provider, model, now, now, sizeBytes,
+        ],
+      });
+
+      await this.#ledger.appendInTransaction(tx, scope, {
+        eventType: "answer_indexed",
+        actorType: "system",
+        actorId: null,
+        objectId: id,
+        objectVersion: knowledge.version,
+        payload: {
+          questionHash,
+          cacheable: Boolean(cacheable),
+          expiresAt,
+          provider,
+          model,
+        },
+        provider,
+        model,
+      });
+
+      await tx.commit();
+      return {
+        knowledgeId: id,
+        question: String(question).trim(),
+        normalizedQuestion,
+        questionHash,
+        expiresAt,
+        cacheable: Boolean(cacheable),
+        provider,
+        model,
+        hitCount: 0,
+        lastHitAt: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+    } catch (error) {
+      try { await tx.rollback(); } catch {}
+      throw error;
+    }
+  }
+
+  async findExactSavedAnswer(scope, question, { now = new Date() } = {}) {
+    assertScope(scope);
+
+    const normalizedQuestion = normalizeAnswerQuestion(question);
+    const questionHash = hashString(normalizedQuestion);
+    const timestamp = now instanceof Date ? now.toISOString() : new Date(now).toISOString();
+
+    const result = await this.#client.execute({
+      sql: `SELECT
+          a.*,
+          k.knowledge_type,
+          k.title,
+          k.content_json,
+          k.content_text,
+          k.source_type,
+          k.source_ref,
+          k.confidence,
+          k.importance,
+          k.trust_level,
+          k.status AS knowledge_status,
+          k.version,
+          k.embedding_ref,
+          k.provenance_ref,
+          k.retention_expires_at,
+          k.checksum,
+          k.updated_at AS knowledge_updated_at
+        FROM answer_index a
+        JOIN knowledge_records k
+          ON k.id = a.knowledge_id
+         AND k.tenant_id = a.tenant_id
+         AND k.user_id = a.user_id
+        WHERE a.tenant_id = ?
+          AND a.user_id = ?
+          AND a.question_hash = ?
+          AND a.cacheable = 1
+          AND k.deleted_at IS NULL
+          AND k.status IN ('important','permanent')
+          AND (a.expires_at IS NULL OR a.expires_at > ?)
+          AND (k.retention_expires_at IS NULL OR k.retention_expires_at > ?)
+        ORDER BY k.importance DESC, k.updated_at DESC
+        LIMIT 1`,
+      args: [
+        scope.tenantId,
+        scope.userId,
+        questionHash,
+        timestamp,
+        timestamp,
+      ],
+    });
+
+    const row = result.rows[0];
+    if (!row) return null;
+
+    return {
+      knowledgeId: row.knowledge_id,
+      question: row.question_text,
+      normalizedQuestion: row.normalized_question,
+      questionHash: row.question_hash,
+      answer: fromJson(row.content_json),
+      contentText: row.content_text,
+      title: row.title,
+      status: row.knowledge_status,
+      version: Number(row.version),
+      sourceType: row.source_type,
+      sourceRef: row.source_ref,
+      confidence: row.confidence == null ? null : Number(row.confidence),
+      importance: Number(row.importance),
+      trustLevel: row.trust_level,
+      provenanceRef: row.provenance_ref,
+      expiresAt: row.expires_at,
+      retentionExpiresAt: row.retention_expires_at,
+      provider: row.provider,
+      model: row.model,
+      hitCount: Number(row.hit_count),
+      lastHitAt: row.last_hit_at,
+      updatedAt: row.knowledge_updated_at,
+    };
+  }
+
+  async recordAnswerHit(scope, knowledgeId, {
+    matchType = "exact",
+    score = null,
+    now = new Date(),
+  } = {}) {
+    assertScope(scope);
+
+    const timestamp = now instanceof Date ? now.toISOString() : new Date(now).toISOString();
+    const tx = await this.#client.transaction("write");
+
+    try {
+      const current = await tx.execute({
+        sql: "SELECT * FROM answer_index WHERE tenant_id = ? AND user_id = ? AND knowledge_id = ?",
+        args: [scope.tenantId, scope.userId, knowledgeId],
+      });
+
+      if (!current.rows[0]) {
+        const error = new Error("Saved answer index not found.");
+        error.code = "ANSWER_INDEX_NOT_FOUND";
+        throw error;
+      }
+
+      await tx.execute({
+        sql: `UPDATE answer_index
+          SET hit_count = hit_count + 1,
+              last_hit_at = ?,
+              updated_at = ?
+          WHERE tenant_id = ? AND user_id = ? AND knowledge_id = ?`,
+        args: [timestamp, timestamp, scope.tenantId, scope.userId, knowledgeId],
+      });
+
+      await this.#ledger.appendInTransaction(tx, scope, {
+        eventType: "answer_cache_hit",
+        actorType: "system",
+        actorId: null,
+        objectId: knowledgeId,
+        objectVersion: null,
+        payload: {
+          matchType,
+          score: Number.isFinite(Number(score)) ? Number(score) : null,
+          occurredAt: timestamp,
+        },
+      });
+
+      await tx.commit();
+
+      const updated = await this.#client.execute({
+        sql: "SELECT hit_count, last_hit_at FROM answer_index WHERE tenant_id = ? AND user_id = ? AND knowledge_id = ?",
+        args: [scope.tenantId, scope.userId, knowledgeId],
+      });
+
+      return {
+        knowledgeId,
+        hitCount: Number(updated.rows[0]?.hit_count ?? 0),
+        lastHitAt: updated.rows[0]?.last_hit_at ?? null,
+        matchType,
+        score: Number.isFinite(Number(score)) ? Number(score) : null,
+      };
+    } catch (error) {
+      try { await tx.rollback(); } catch {}
       throw error;
     }
   }
