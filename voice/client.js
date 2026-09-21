@@ -106,11 +106,6 @@ export class VoiceClient {
 
   async interrupt(reason = "user") {
     this.#audioOutput?.clear();
-    try {
-      if (this.#socket?.readyState === this.#WebSocket.OPEN) {
-        this.#socket.send(JSON.stringify({ realtimeInput: { activityEnd: {} } }));
-      }
-    } catch {}
     this.#metrics.interruptionCount += 1;
     this.#transitionSafely("interrupted");
     this.#emit("voice.interrupted", { sessionId: this.#sessionId, reason });
@@ -200,8 +195,15 @@ export class VoiceClient {
 
     this.#tokenInfo = data;
     this.#sessionId = String(data.sessionId);
+    this.#config = {
+      ...this.#config,
+      audioChunkMs: Number(data.audioChunkMs) || this.#config.audioChunkMs,
+      outputBufferLimitMs: Number(data.outputBufferLimitMs) || this.#config.outputBufferLimitMs,
+      maxSessionMinutes: Number(data.maxSessionMinutes) || this.#config.maxSessionMinutes,
+      maxReconnects: Number(data.maxReconnectAttempts) || this.#config.maxReconnects,
+      reconnectBaseMs: Number(data.reconnectBaseMs) || this.#config.reconnectBaseMs,
+    };
     this.#emit("voice.session.started", { sessionId: this.#sessionId, model: data.model });
-    await this.#sendAudit("voice_session_started", { sessionId: this.#sessionId, model: data.model, expiresAt: data.expiresAt });
     return data;
   }
 
@@ -314,7 +316,6 @@ export class VoiceClient {
         this.#emit("voice.generation.complete", { sessionId: this.#sessionId });
         break;
       case "turnComplete":
-        this.#audioOutput.clear();
         this.#transitionSafely("listening");
         this.#emit("voice.listening.started", { sessionId: this.#sessionId });
         break;
