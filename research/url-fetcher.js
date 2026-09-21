@@ -280,7 +280,47 @@ async function pinnedHttpRequest(target, {
   });
 }
 
+const PRIVATE_IPV4_RANGES = Object.freeze([
+  ["0.0.0.0", 8],
+  ["10.0.0.0", 8],
+  ["100.64.0.0", 10],
+  ["127.0.0.0", 8],
+  ["169.254.0.0", 16],
+  ["172.16.0.0", 12],
+  ["192.0.0.0", 24],
+  ["192.0.2.0", 24],
+  ["192.168.0.0", 16],
+  ["198.18.0.0", 15],
+  ["198.51.100.0", 24],
+  ["203.0.113.0", 24],
+  ["224.0.0.0", 4],
+  ["240.0.0.0", 4],
+]);
+
+function ipv4ToNumber(ip) {
+  return ip.split(".").reduce((value, part) => (value * 256) + Number(part), 0) >>> 0;
+}
+
+function maskFor(bits) {
+  return bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
+}
+
+function ipv4InRange(ip, network, bits) {
+  return (ipv4ToNumber(ip) & maskFor(bits)) === (ipv4ToNumber(network) & maskFor(bits));
+}
+
 function isPrivateIp(address) {
+  if (net.isIPv4(address)) return PRIVATE_IPV4_RANGES.some(([network, bits]) => ipv4InRange(address, network, bits));
+  if (!net.isIPv6(address)) return true;
+  const normalized = address.toLowerCase();
+  if (normalized === "::1" || normalized === "::") return true;
+  if (/^fe[89ab]/i.test(normalized)) return true;
+  if (/^f[cd]/i.test(normalized)) return true;
+  if (normalized.startsWith("::ffff:") && net.isIPv4(normalized.slice(7))) return isPrivateIp(normalized.slice(7));
+  return false;
+}
+
+async function readLimited(response, maxBytes) {
   if (!response.body?.getReader) {
     const bytes = new Uint8Array(await response.arrayBuffer());
     if (bytes.byteLength > maxBytes) throw retrievalError("SOURCE_TOO_LARGE", "Retrieved source exceeds the configured byte limit.");
@@ -300,6 +340,7 @@ function isPrivateIp(address) {
     }
     chunks.push(value);
   }
+
   const bytes = new Uint8Array(total);
   let offset = 0;
   for (const chunk of chunks) {
