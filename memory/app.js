@@ -17,6 +17,7 @@ import {
 } from "./auxiliary-services.js";
 import { LearningPipeline } from "./learning-pipeline.js";
 import { MemoryInspectionService } from "./inspection-service.js";
+import { VoiceSessionService } from "./voice-session-service.js";
 
 export function createJuniMemoryApplication({ config, events, embedder = null, answerEmbedder = null } = {}) {
   const db = createJuniDatabase({
@@ -79,6 +80,8 @@ export function createJuniMemoryApplication({ config, events, embedder = null, a
   });
 
   knowledge.setAnswerInfrastructure({ vectors, answerEmbedder });
+
+  const voiceSessions = new VoiceSessionService({ client: db.client, quota, ledger });
 
   const retrieval = new MemoryRetrievalService({
     memory,
@@ -162,5 +165,6 @@ export function createJuniMemoryApplication({ config, events, embedder = null, a
     modelMetadata,
     learning,
     inspection,
+    voiceSessions,
   });
 }

@@ -410,3 +410,11 @@ Step 4 can add a durable external audit checkpoint or other independent anchorin
 Step 5 can expand the Gemini Live browser experience using secure session credentials.
 
 Step 2 intentionally stops before unrestricted autonomous learning, Internet access, browser automation, full voice/video UX, and a distributed blockchain network.
+
+## Step 4 — realtime voice
+
+JUNI-AI includes a constrained Gemini Live audio path: browser microphone PCM16 at 16 kHz to Gemini Live, with PCM16 model audio at 24 kHz. The browser receives a short-lived, single-use ephemeral token from POST /api/voice-token; the long-lived Gemini key remains server-side. Voice sessions are tenant/user scoped and lifecycle metrics use the existing storage, quota, and provenance boundaries.
+
+The browser voice client supports AudioWorklet capture with resampling, bounded output buffering, interruption/barge-in handling, bounded reconnect with session resumption, optional captions, and only the allowlisted openWebsite and getCurrentTime tools. Website opening requires an explicit user action.
+
+Voice is disabled by default with JUNI_FEATURE_VOICE=false.

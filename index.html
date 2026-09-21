@@ -53,8 +53,54 @@
           <span class="eyebrow">JUNI-AI</span>
           <h1>Your ideas, in conversation.</h1>
         </div>
-        <div class="status-pill"><span class="status-dot"></span> Ready</div>
+        <div class="topbar-actions">
+          <button class="voice-button" id="voiceOpenButton" type="button" aria-expanded="false" aria-controls="voicePanel">
+            <span aria-hidden="true">◉</span> Voice
+          </button>
+          <div class="status-pill"><span class="status-dot"></span> Ready</div>
+        </div>
       </header>
+
+      <section class="voice-panel" id="voicePanel" aria-label="JUNI real-time voice" hidden>
+        <div class="voice-panel-card">
+          <div class="voice-orb" id="voiceOrb" aria-hidden="true"><div class="voice-orb-core"></div></div>
+          <div class="voice-state" id="voiceState" role="status" aria-live="polite">Idle</div>
+          <div class="voice-session" id="voiceSession">No active voice session</div>
+
+          <div class="voice-controls">
+            <button class="voice-control primary" id="voiceStartButton" type="button">Start voice</button>
+            <button class="voice-control" id="voiceMuteButton" type="button" aria-pressed="false" disabled>Mute</button>
+            <button class="voice-control" id="voiceStopButton" type="button" disabled>Stop</button>
+            <button class="voice-control" id="voiceRetryButton" type="button" hidden>Retry</button>
+          </div>
+
+          <div class="voice-settings">
+            <div class="voice-setting">
+              <label for="voiceCaptionsToggle">
+                <input id="voiceCaptionsToggle" type="checkbox">
+                Captions
+              </label>
+            </div>
+            <div class="voice-setting">
+              <label for="voiceVolume">Volume</label>
+              <input id="voiceVolume" type="range" min="0" max="1" step="0.01" value="1" aria-label="Voice output volume">
+            </div>
+          </div>
+
+          <div class="voice-captions" id="voiceCaptions" hidden aria-live="polite">
+            <div class="voice-caption-line" id="voiceCaptionYou"></div>
+            <div class="voice-caption-line" id="voiceCaptionJuni"></div>
+          </div>
+
+          <div class="voice-tool-offer" id="voiceToolOffer">
+            <a id="voiceToolUrl" href="#" target="_blank" rel="noopener noreferrer">Website ready</a>
+            <button class="voice-control" id="voiceToolOpen" type="button">Open</button>
+          </div>
+
+          <div class="voice-error" id="voiceError" role="alert" hidden></div>
+          <div class="research-hint" id="voiceHint">Audio-to-audio Live API · microphone stays on this device until you stop.</div>
+        </div>
+      </section>
 
       <section class="chat-wrap" aria-label="Chat">
         <div class="welcome-card" id="welcomeCard">
