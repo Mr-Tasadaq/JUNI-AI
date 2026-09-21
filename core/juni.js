@@ -40,11 +40,18 @@ export class JuniCore {
     }
 
     const lastMessage = messages.at(-1);
-    if (normalized.message && lastMessage?.role === "user" && lastMessage.content === normalized.message) {
+    const currentMessagePresent = normalized.message
+      && lastMessage?.role === "user"
+      && (lastMessage.content === normalized.message
+        || (Array.isArray(lastMessage.content)
+          && lastMessage.content.some((part) =>
+            part?.type === "text" && part.text === normalized.message)));
+
+    if (currentMessagePresent && lastMessage.content === normalized.message) {
       messages.pop();
     }
 
-    if (normalized.message) {
+    if (normalized.message && !currentMessagePresent) {
       messages.push({ role: "user", content: normalized.message });
     }
 
