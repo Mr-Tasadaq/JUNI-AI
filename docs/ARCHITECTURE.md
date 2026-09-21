@@ -50,7 +50,7 @@ The core does not call vendor SDK methods directly.
 | --- | --- | --- | --- |
 | Anthropic | `providers/anthropic.js` | `claude-opus-5` | text, vision, streaming, tool calling |
 | OpenAI | `providers/openai.js` | `gpt-5.5` | text, vision, streaming, tool calling, research capability flag |
-| Gemini | `providers/gemini.js` | `gemini-3.8-flash` | text, vision, audio input/output capability flag, streaming, tool calling, research capability flag, live voice flag |
+| Gemini | `providers/gemini.js` | `gemini-3.8-flash` | text, vision, audio input, streaming, tool calling, research capability flag |
 
 These are configuration defaults, not a permanent "brain". Model identifiers can be replaced through environment configuration.
 
