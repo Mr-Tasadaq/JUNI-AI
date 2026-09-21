@@ -29,6 +29,97 @@ export const JUNI_IDENTITY = Object.freeze({
   ]),
 });
 
+const IDENTITY_FIELD_LIMIT = 128;
+
+function normalizeIdentityField(value, fieldName) {
+  if (typeof value !== "string") {
+    throw new TypeError(fieldName + " must be a string.");
+  }
+
+  const normalized = value.trim();
+  if (!normalized) {
+    throw new TypeError(fieldName + " is required.");
+  }
+
+  if (normalized.length > IDENTITY_FIELD_LIMIT) {
+    throw new TypeError(fieldName + " is too long.");
+  }
+
+  return normalized;
+}
+
+function authenticatedIdentity(req) {
+  return req?.auth?.user ?? req?.user ?? null;
+}
+
+function identityFromAuthenticatedRequest(req) {
+  const authenticated = authenticatedIdentity(req);
+  if (!authenticated || typeof authenticated !== "object") return null;
+
+  const tenantId = authenticated.tenantId ?? authenticated.tenant_id;
+  const userId = authenticated.userId ?? authenticated.user_id ?? authenticated.id;
+  if (tenantId == null || userId == null) return null;
+
+  return {
+    tenantId,
+    userId,
+    sessionId: authenticated.sessionId ?? authenticated.session_id,
+    actorId: authenticated.actorId ?? authenticated.actor_id ?? authenticated.id ?? userId,
+    authMethod: authenticated.authMethod ?? authenticated.auth_method ?? "authenticated",
+  };
+}
+
+export function resolveRequestIdentity(req, {
+  fixedTenantId = null,
+  fixedUserId = null,
+  allowIdentityHeaders = false,
+} = {}) {
+  const authenticated = identityFromAuthenticatedRequest(req);
+
+  if (authenticated) {
+    const identity = {
+      tenantId: normalizeIdentityField(authenticated.tenantId, "tenantId"),
+      userId: normalizeIdentityField(authenticated.userId, "userId"),
+      actorId: normalizeIdentityField(String(authenticated.actorId ?? authenticated.userId), "actorId"),
+      authMethod: normalizeIdentityField(String(authenticated.authMethod ?? "authenticated"), "authMethod"),
+    };
+
+    if (authenticated.sessionId != null) {
+      identity.sessionId = normalizeIdentityField(String(authenticated.sessionId), "sessionId");
+    }
+
+    return Object.freeze(identity);
+  }
+
+  if (allowIdentityHeaders) {
+    const headerTenant = req?.headers?.["x-tenant-id"];
+    const headerUser = req?.headers?.["x-user-id"];
+
+    if (headerTenant != null || headerUser != null) {
+      const identity = {
+        tenantId: normalizeIdentityField(headerTenant, "tenantId"),
+        userId: normalizeIdentityField(headerUser, "userId"),
+        actorId: normalizeIdentityField(headerUser, "actorId"),
+        authMethod: "identity-header",
+      };
+      return Object.freeze(identity);
+    }
+  }
+
+  if (fixedTenantId == null || fixedUserId == null) {
+    const error = new Error("Authenticated request identity is not configured.");
+    error.code = "REQUEST_IDENTITY_NOT_CONFIGURED";
+    throw error;
+  }
+
+  return Object.freeze({
+    tenantId: normalizeIdentityField(String(fixedTenantId), "tenantId"),
+    userId: normalizeIdentityField(String(fixedUserId), "userId"),
+    actorId: normalizeIdentityField(String(fixedUserId), "actorId"),
+    authMethod: "server-fixed",
+  });
+}
+
 export function buildSystemIdentity(extraInstructions = "") {
   return [
     "You are " + JUNI_IDENTITY.name + ", a " + JUNI_IDENTITY.role + ".",
