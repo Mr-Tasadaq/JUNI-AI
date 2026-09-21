@@ -248,14 +248,6 @@ export default async function handler(req, res) {
     }
   }
 
-  if (attachments.length) {
-    const currentUserContent = [
-      { type: "text", text: message },
-      ...attachments,
-    ];
-    request.messages.push({ role: "user", content: currentUserContent });
-  }
-
   if (answerScope && app.config.context?.enabled) {
     try {
       request.messages = await buildServerContext(app, answerScope, conversationId);
@@ -268,6 +260,14 @@ export default async function handler(req, res) {
       });
       request.messages = [];
     }
+  }
+
+  if (attachments.length) {
+    const currentUserContent = [
+      { type: "text", text: message },
+      ...attachments,
+    ];
+    request.messages.push({ role: "user", content: currentUserContent });
   }
 
   if (answerScope) {
