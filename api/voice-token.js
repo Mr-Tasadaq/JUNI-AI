@@ -44,7 +44,7 @@ export default async function handler(req, res) {
   }
 
   const rate = await app.rateLimiter.check(
-    clientKey(req),
+    requestClientKey(req),
     5,
     60,
   );
