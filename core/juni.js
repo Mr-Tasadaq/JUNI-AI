@@ -161,6 +161,26 @@ export class JuniCore {
     const normalized = normalizeRequest(request, {
       model: this.#config.app.defaultModel,
     });
+    let messages = [...normalized.messages];
+    const lastMessage = messages.at(-1);
+    const currentMessagePresent = normalized.message
+      && lastMessage?.role === "user"
+      && (lastMessage.content === normalized.message
+        || (Array.isArray(lastMessage.content)
+          && lastMessage.content.some((part) =>
+            part?.type === "text" && part.text === normalized.message)));
+
+    if (currentMessagePresent && lastMessage.content === normalized.message) {
+      messages.pop();
+    }
+    if (normalized.message && !currentMessagePresent) {
+      messages.push({ role: "user", content: normalized.message });
+    }
+
+    const maxHistory = this.#config.security.maxHistory;
+    if (messages.length > maxHistory) {
+      messages = messages.slice(-maxHistory);
+    }
 
     this.#events?.emit("request.started", {
       task: normalized.task,
@@ -171,6 +191,7 @@ export class JuniCore {
     try {
       const stream = await this.#router.stream({
         ...normalized,
+        messages,
         tools: toolDefinitions(this.#tools, this.#config.tools?.enabled !== false && this.#config.app.featureFlags.tools),
         metadata: { ...normalized.metadata, requestId },
       });
