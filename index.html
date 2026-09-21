@@ -91,11 +91,16 @@
 
       <form class="composer" id="composer">
         <div class="composer-inner">
+          <button class="icon-button composer-tool-button" id="attachButton" type="button" aria-label="Attach image" title="Attach image">＋</button>
           <textarea id="messageInput" rows="1" maxlength="4000" placeholder="Message JUNI-AI…" aria-label="Message JUNI-AI"></textarea>
+          <button class="icon-button composer-tool-button voice-button" id="voiceButton" type="button" aria-label="Start voice chat" title="Start voice chat">◉</button>
           <button class="send-button" id="sendButton" type="submit" aria-label="Send message" title="Send message">
             <span>↑</span>
           </button>
         </div>
+        <input id="imageInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden>
+        <div id="attachmentList" class="attachment-list" hidden></div>
+        <div id="voiceStatus" class="voice-status" hidden aria-live="polite"></div>
         <div class="composer-meta">
           <label class="research-toggle">
             <input type="checkbox" id="researchToggle">
