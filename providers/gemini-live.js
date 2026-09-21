@@ -93,7 +93,7 @@ export function createGeminiLiveProvider(config, { identity = buildSystemIdentit
       return value;
     },
 
-    async createEphemeralToken({ model = providerConfig.liveModel, captionsEnabled = config.voice.captionsEnabled, sessionId = null } = {}) {
+    async createEphemeralToken({ model = providerConfig.liveModel, captionsEnabled = config.voice.captionsEnabled, sessionId = null, resumptionHandle = null } = {}) {
       requireGeminiProvider(config);
       const validation = await provider.validateLiveModel({ model });
       const client = await getClient();
@@ -104,6 +104,7 @@ export function createGeminiLiveProvider(config, { identity = buildSystemIdentit
         identity,
         toolDeclarations: VOICE_TOOL_DECLARATIONS,
         captionsEnabled,
+        resumptionHandle: safeResumptionHandle(resumptionHandle),
       });
       try {
         const response = await client.authTokens.create({
@@ -192,4 +193,11 @@ function voiceError(code, message) {
   const error = new Error(message);
   error.code = code;
   return error;
+}
+
+
+function safeResumptionHandle(handle) {
+  if (handle == null || handle === "") return null;
+  const value = String(handle);
+  return value.length <= 4096 ? value : null;
 }
