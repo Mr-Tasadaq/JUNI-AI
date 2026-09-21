@@ -9,3 +9,5 @@ export { authorizeRequest, checkOrigin, redactSecrets, sanitizeEventData, safeTo
 export { createProvenanceRecord, AI_BLOCKCHAIN_BOUNDARY } from "./provenance.js";
 export { assertVoiceSessionContract, VoiceSessionController, VOICE_EVENTS } from "./voice.js";
 export { createJuniMemoryApplication } from "../memory/app.js";
+
+export { createJuniResearchApplication } from "../research/app.js";
