@@ -484,3 +484,17 @@ Implemented:
 - current chat message is explicitly included in both generate and stream provider inputs
 
 Gemini Live client-to-server authentication uses short-lived ephemeral tokens rather than exposing the long-lived Gemini API key in browser code. The token is constrained to the configured Live model, one use, audio response modality, transcriptions, and session resumption.
+
+## Step 11 — frontend/product UX hardening
+
+Implemented in the repository:
+
+- authenticated service-status indicator backed by `/api/health`
+- accessible saved-answer review modal backed by the existing `/api/answers` approval workflow
+- approve/reject actions with explicit user interaction before an answer becomes reusable Answer-First knowledge
+- visible attachment metadata on sent messages without persisting the raw image bytes into browser chat history
+- user-facing attachment validation feedback instead of silently dropping unsupported or oversized files
+- modal focus management and Escape/backdrop close behavior
+- frontend source-contract tests covering the production UX surface and the candidate rendering trust boundary
+
+The browser-local conversation list remains a convenience cache. Server-side conversation context remains authoritative when a trusted identity scope is available.
