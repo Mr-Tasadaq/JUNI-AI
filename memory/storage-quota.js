@@ -38,6 +38,7 @@ const CATEGORY_QUERIES = Object.freeze({
     "SELECT COALESCE(SUM(size_bytes),0) AS bytes FROM ledger_events WHERE tenant_id = ? AND user_id = ?",
   ],
   other: [
+    "SELECT COALESCE(SUM(size_bytes),0) AS bytes FROM voice_sessions WHERE tenant_id = ? AND user_id = ?",
     "SELECT COALESCE(SUM(size_bytes),0) AS bytes FROM research_results WHERE tenant_id = ? AND user_id = ?",
     "SELECT COALESCE(SUM(size_bytes),0) AS bytes FROM research_sessions WHERE tenant_id = ? AND user_id = ?",
     "SELECT COALESCE(SUM(size_bytes),0) AS bytes FROM research_operations WHERE tenant_id = ? AND user_id = ?",

@@ -401,3 +401,20 @@ Step 4 can add a durable external audit checkpoint or other independent anchorin
 Step 5 can expand the Gemini Live browser experience using secure session credentials.
 
 Step 2 intentionally stops before unrestricted autonomous learning, Internet access, browser automation, full voice/video UX, and a distributed blockchain network.
+
+
+## Step 4 — realtime voice
+
+Step 4 is implemented as a real-time Gemini Live browser voice interface, not as speech-to-text plus normal chat generation.
+
+Production audio path:
+
+\`Microphone → PCM16 16kHz → Gemini Live WebSocket → PCM16 24kHz → Web Audio\`
+
+The browser obtains a short-lived Gemini ephemeral token from \`POST /api/voice-token\` after the existing JUNI bearer authentication/origin/rate-limit checks. The long-lived \`GEMINI_API_KEY\` remains server-side.
+
+Voice mode enforces AUDIO-only model responses. Optional input/output transcription is captions metadata only.
+
+The implementation includes AudioWorklet resampling/chunking, scheduled PCM output, barge-in interruption, session resumption, context-window compression, bounded reconnect, safe realtime tool calling, voice lifecycle observability, tenant/user-scoped voice session metadata, and minimal mobile-first UI controls.
+
+Additional configuration is documented in \`.env.example\`. See \`docs/VOICE.md\`.

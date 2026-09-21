@@ -21,6 +21,7 @@ export function createJuniApplication({ env = process.env, tools = createToolReg
   const memory = createJuniMemoryApplication({ config, events });
   const research = createJuniResearchApplication({ config, events, router, memory });
   const juni = createJuni({ config, router, tools, events });
+  const voiceSessions = memory.voiceSessions;
   const voice = new VoiceSessionController({
     sessionFactory: (options) => providers.geminiLive.connect(options),
     onEvent: (event) => events.emit(event.type, event),
@@ -35,6 +36,7 @@ export function createJuniApplication({ env = process.env, tools = createToolReg
     tools,
     juni,
     voice,
+    voiceSessions,
     memory,
     research,
   });

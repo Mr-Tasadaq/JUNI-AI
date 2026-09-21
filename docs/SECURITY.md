@@ -86,3 +86,18 @@ Retrieved pages are UNTRUSTED DATA. The research layer explicitly instructs synt
 The research HTTP endpoint does not trust arbitrary tenant/user headers by default. It uses authenticated request identity when available or a server-configured fixed scope. Provider API keys remain server-side.
 
 Provider-native citations are preserved only when they can be mapped to a retrieved source. Application citations are accepted only when the cited source and evidence IDs exist. Conflicting evidence is retained as supports/contradicts/qualifies relationships rather than silently merged.
+
+
+## Step 4 realtime voice security
+
+Voice token issuance uses the existing bearer authorization, exact-origin check when configured, and rate limiting. Identity is resolved with the same trusted request context/fixed server-side identity approach used by Step 3; browser-supplied tenant/user headers are not trusted by default.
+
+\`providers/gemini-live.js\` validates the configured \`GEMINI_LIVE_MODEL\` against the voice allowlist and a Live-capability check before creating an ephemeral token. The token uses \`uses: 1\`, bounded expiry, a server-side Juni system identity, AUDIO-only response modality, constrained tools, session resumption, and context compression.
+
+The ephemeral token exists only in browser memory. It is not persisted in localStorage, sessionStorage, IndexedDB, cookies, application chat history, the Step 2 database, or the provenance ledger. The long-lived Gemini API key is never sent to the browser or logged.
+
+Microphone access is requested only from the explicit Start Voice action, with audio-only \`getUserMedia\` constraints and \`video: false\`. No raw microphone/model audio is persisted by default.
+
+Live tool calls are allowlisted and schema-validated. \`openWebsite\` accepts only credential-free HTTP(S) URLs and returns a user-visible Open action instead of silently executing browser behavior. Unknown tools and unsafe URLs are rejected.
+
+Vercel CSP is restricted to the required Gemini Live WebSocket host plus same-origin connections. Permissions-Policy allows microphone for the application origin while camera and geolocation remain disabled.
