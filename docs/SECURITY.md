@@ -110,3 +110,22 @@ Retrieved pages are UNTRUSTED DATA. The research layer explicitly instructs synt
 The research HTTP endpoint does not trust arbitrary tenant/user headers by default. It uses authenticated request identity when available or a server-configured fixed scope. Provider API keys remain server-side.
 
 Provider-native citations are preserved only when they can be mapped to a retrieved source. Application citations are accepted only when the cited source and evidence IDs exist. Conflicting evidence is retained as supports/contradicts/qualifies relationships rather than silently merged.
+
+## Step 12 production deployment boundary
+
+Production Vercel deployments run npm run verify:production before the deployment is accepted. The check fails closed when the required application access token, exact HTTPS origin, enabled provider credentials, remote persistent LibSQL database, or current access-code identity scope is missing.
+
+For the current single-credential access model, production must configure:
+
+- JUNI_API_TOKEN
+- JUNI_ALLOWED_ORIGIN
+- at least one enabled provider API key
+- a hosted/remote JUNI_DATABASE_URL
+- JUNI_IDENTITY_DEFAULT_TENANT_ID
+- JUNI_IDENTITY_DEFAULT_USER_ID
+
+Identity-header overrides remain disabled in production. Web research additionally requires its configured fixed tenant/user scope. Voice requires the Gemini server credential. Approved-answer GitHub export remains disabled by default and requires explicit repository-scoped credentials before use.
+
+Vercel responses receive HSTS, clickjacking protection, cross-origin isolation/resource policy, a restrictive CSP, and a permissions policy. CI pins the core GitHub actions used for checkout and Node setup, audits production dependencies at high severity, and runs CodeQL for JavaScript. Dependabot tracks both npm and GitHub Actions updates.
+
+The public repository contains no provider credentials by design. The .well-known/security.txt file points security researchers to the repository vulnerability-reporting path.
