@@ -1,5 +1,5 @@
 import { createJuniApplication } from "../core/app.js";
-import { checkOrigin, clearAuthCookie, safeTokenEquals, serializeAuthCookie } from "../core/security.js";
+import { checkOrigin, clearAuthCookie, requestClientKey, safeTokenEquals, serializeAuthCookie } from "../core/security.js";
 
 let application;
 function getApplication() {
@@ -12,21 +12,15 @@ function json(res, status, body) {
   res.setHeader("Cache-Control", "no-store");
   return res.json(body);
 }
-function clientKey(req) {
-  return req.ip
-    || req.headers["x-real-ip"]
-    || req.headers["x-forwarded-for"]?.split(",").at(-1)?.trim()
-    || "unknown";
-}
 export default async function handler(req, res) {
   const app = getApplication();
   if (!checkOrigin(req.headers.origin, app.config.security.allowedOrigin)) {
     return json(res, 403, { error: "Origin not allowed." });
   }
 
-  const limit = Number.parseInt(process.env.JUNI_RATE_LIMIT || "20", 10);
-  const windowSeconds = Number.parseInt(process.env.JUNI_RATE_WINDOW_SECONDS || "60", 10);
-  const rate = await app.rateLimiter.check(clientKey(req), Number.isFinite(limit) && limit > 0 ? limit : 20, Number.isFinite(windowSeconds) && windowSeconds > 0 ? windowSeconds : 60);
+  const limit = app.config.security.authRateLimit;
+  const windowSeconds = app.config.security.authRateWindowSeconds;
+  const rate = await app.rateLimiter.check(requestClientKey(req), Number.isFinite(limit) && limit > 0 ? limit : 20, Number.isFinite(windowSeconds) && windowSeconds > 0 ? windowSeconds : 60);
 
   res.setHeader("X-RateLimit-Limit", String(rate.limit));
   res.setHeader("X-RateLimit-Remaining", String(rate.remaining));
