@@ -1,0 +1,5 @@
+Contact: https://github.com/Mr-Tasadaq/JUNI-AI/security/advisories/new
+Policy: https://github.com/Mr-Tasadaq/JUNI-AI/blob/main/docs/SECURITY.md
+Preferred-Languages: en
+Expires: 2027-09-21T00:00:00.000Z
+Canonical: https://github.com/Mr-Tasadaq/JUNI-AI/.well-known/security.txt
