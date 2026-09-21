@@ -7,7 +7,7 @@ export class SafeWebRetriever {
   #fetch;
   #lookup;
   constructor({ config, fetchImpl = globalThis.fetch, lookup } = {}) {
-    this.#config = config;
+    this.#config = config?.research ? config : { research: config ?? {} };
     this.#fetch = fetchImpl;
     this.#lookup = lookup;
   }
