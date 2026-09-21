@@ -1,6 +1,5 @@
 const STORAGE_KEY = "juni-ai-chats-v1";
 const THEME_KEY = "juni-ai-theme-v1";
-const AUTH_KEY = "juni-ai-access-token-v1";
 
 const elements = {
   composer: document.querySelector("#composer"),
@@ -254,7 +253,7 @@ async function sendMessage() {
   } catch (error) {
     chat.messages.push({
       role: "assistant",
-      content: "I couldn't reach the assistant service. JUNI-AI is still running in demo mode. Connect your server endpoint at /api/chat to enable a real model.",
+      content: error?.message || "JUNI-AI could not complete the request. Check the service and try again.",
       createdAt: Date.now(),
     });
     console.error(error);
@@ -282,12 +281,10 @@ async function requestAssistant(text, history, researchEnabled = false, allowAut
 
   try {
     const headers = { "Content-Type": "application/json" };
-    const accessToken = localStorage.getItem(AUTH_KEY);
-    if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
-
     const response = await fetch(researchEnabled ? "/api/research" : "/api/chat", {
       method: "POST",
       headers,
+      credentials: "same-origin",
       body: JSON.stringify(payload),
     });
 
@@ -309,8 +306,9 @@ async function requestAssistant(text, history, researchEnabled = false, allowAut
 
       const supplied = window.prompt("Enter your JUNI-AI access code:");
       if (supplied?.trim()) {
-        localStorage.setItem(AUTH_KEY, supplied.trim());
-        return requestAssistant(text, history, researchEnabled, false);
+        const authenticated = await authenticateWithAccessCode(supplied.trim());
+        if (authenticated.ok) return requestAssistant(text, history, researchEnabled, false);
+        return { reply: authenticated.error, research: null };
       }
       return { reply: "JUNI-AI needs an access code for the server API. Use “Set access code” in the sidebar.", research: null };
     }
@@ -323,56 +321,53 @@ async function requestAssistant(text, history, researchEnabled = false, allowAut
       // Keep the generic HTTP error.
     }
     return { reply: errorMessage, research: null };
-  } catch {
-    return { reply: demoReply(text), research: null };
+  } catch (error) {
+    return {
+      reply: error?.message || "Unable to reach the JUNI-AI server. Check your network connection or deployment.",
+      research: null,
+    };
   }
 }
 
-function setAccessCode() {
-  const current = localStorage.getItem(AUTH_KEY) || "";
-  const next = window.prompt(
-    current ? "Update your JUNI-AI access code:" : "Enter your JUNI-AI access code:",
-    current
-  );
+async function authenticateWithAccessCode(token) {
+  try {
+    const response = await fetch("/api/auth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ token }),
+    });
 
+    let message = "Access code could not be accepted.";
+    try {
+      const data = await response.json();
+      if (typeof data?.error === "string") message = data.error;
+    } catch {}
+
+    if (!response.ok) return { ok: false, error: message };
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "Unable to reach the authentication service. Check your network connection or deployment." };
+  }
+}
+
+async function setAccessCode() {
+  const next = window.prompt("Enter your JUNI-AI access code:");
   if (next === null) return;
 
   if (next.trim()) {
-    localStorage.setItem(AUTH_KEY, next.trim());
-    window.alert("Access code saved on this device.");
-  } else {
-    localStorage.removeItem(AUTH_KEY);
+    const result = await authenticateWithAccessCode(next.trim());
+    window.alert(result.ok ? "Access code saved securely in an HttpOnly session cookie." : result.error);
+    return;
+  }
+
+  try {
+    const response = await fetch("/api/auth", { method: "DELETE", credentials: "same-origin" });
+    if (!response.ok) throw new Error("Server rejected the access-code clear request.");
     window.alert("Access code cleared.");
+  } catch {
+    window.alert("Unable to clear the access code because the server could not be reached.");
   }
-}
-
-function demoReply(text) {
-  const normalized = text.toLowerCase();
-
-  if (normalized.includes("hello") || normalized.includes("hi")) {
-    return "Hello! I’m JUNI-AI. I’m ready to help you plan, write, explain, or brainstorm.";
-  }
-
-  if (normalized.includes("project plan") || normalized.includes("website")) {
-    return [
-      "Here’s a simple starting plan:",
-      "1. Define the goal and audience.",
-      "2. Sketch the key pages and user flow.",
-      "3. Build the core experience first.",
-      "4. Test on mobile and desktop.",
-      "5. Add analytics, accessibility checks, and deployment.",
-    ].join("\n");
-  }
-
-  if (normalized.includes("email")) {
-    return "Tell me who the email is for, the purpose, and the tone you want. I can turn those details into a polished draft.";
-  }
-
-  if (normalized.includes("idea") || normalized.includes("brainstorm")) {
-    return "Try narrowing the brainstorm by audience, problem, platform, and time available. A focused prompt usually produces much more useful ideas.";
-  }
-
-  return "Demo mode is active. Your message was saved locally. Add the JUNI-AI access code and configure the server environment to enable live AI responses.";
 }
 
 function showTyping(isResearching = false) {
