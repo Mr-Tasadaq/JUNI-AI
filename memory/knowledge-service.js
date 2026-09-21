@@ -132,6 +132,60 @@ export class KnowledgeService {
     }
   }
 
+  async createAnswerCandidate(scope, {
+    question,
+    answer,
+    provider = null,
+    model = null,
+    retentionExpiresAt = null,
+  } = {}) {
+    assertScope(scope);
+
+    const normalizedQuestion = normalizeAnswerQuestion(question);
+    const answerText = String(answer ?? "").trim();
+    if (!answerText) throw new TypeError("Answer text is required.");
+
+    if (retentionExpiresAt != null) {
+      const expiry = new Date(retentionExpiresAt);
+      if (Number.isNaN(expiry.getTime())) throw new TypeError("Invalid candidate retention expiry.");
+      retentionExpiresAt = expiry.toISOString();
+    }
+
+    const existing = await this.#client.execute({
+      sql: "SELECT * FROM knowledge_records " +
+        "WHERE tenant_id = ? AND user_id = ? " +
+        "AND knowledge_type = 'saved_answer' " +
+        "AND title = ? " +
+        "AND status = 'candidate' " +
+        "AND deleted_at IS NULL " +
+        "ORDER BY updated_at DESC LIMIT 1",
+      args: [scope.tenantId, scope.userId, normalizedQuestion],
+    });
+
+    if (existing.rows[0]) return parseKnowledge(existing.rows[0]);
+
+    return this.create(scope, {
+      knowledgeType: "saved_answer",
+      title: normalizedQuestion,
+      content: answerText,
+      contentText: answerText,
+      sourceType: "model",
+      trustLevel: "generated",
+      status: "candidate",
+      retentionExpiresAt,
+      provider,
+      model,
+      actorType: "system",
+      source: {
+        type: "model",
+        provider,
+        metadata: {
+          answerFirstCandidate: true,
+          questionHash: hashString(normalizedQuestion),
+        },
+      },
+    });
+  }
   async createAnswerIndex(scope, {
     knowledgeId,
     question,
@@ -182,7 +236,7 @@ export class KnowledgeService {
     const tx = await this.#client.transaction("write");
     try {
       const existing = await tx.execute({
-        sql: "SELECT size_bytes FROM answer_index WHERE tenant_id = ? AND user_id = ? AND knowledge_id = ?",
+        sql: "SELECT size_bytes, hit_count FROM answer_index WHERE tenant_id = ? AND user_id = ? AND knowledge_id = ?",
         args: [scope.tenantId, scope.userId, id],
       });
       const delta = sizeBytes - Number(existing.rows[0]?.size_bytes ?? 0);
@@ -237,7 +291,7 @@ export class KnowledgeService {
         cacheable: Boolean(cacheable),
         provider,
         model,
-        hitCount: 0,
+        hitCount: Number(existing.rows[0]?.hit_count ?? 0),
         lastHitAt: null,
         createdAt: now,
         updatedAt: now,
