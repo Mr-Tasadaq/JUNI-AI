@@ -45,7 +45,9 @@ export class VoiceAudioInput {
     try {
       const Context = this.#AudioContext ?? globalThis.AudioContext ?? globalThis.webkitAudioContext;
       if (!Context) throw voiceAudioError("VOICE_AUDIO_ERROR", "Web Audio is unavailable in this browser.");
-      this.#context = typeof Context === "function" ? new Context({ latencyHint: "interactive" }) : await Context();
+      this.#context = this.#AudioContext
+        ? await this.#AudioContext({ latencyHint: "interactive" })
+        : new Context({ latencyHint: "interactive" });
       if (this.#context.state === "suspended") await this.#context.resume();
       this.#source = this.#context.createMediaStreamSource(this.#stream);
       this.#analyser = this.#context.createAnalyser();
