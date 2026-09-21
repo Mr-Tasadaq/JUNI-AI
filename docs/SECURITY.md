@@ -28,6 +28,13 @@ The API applies:
 - bounded conversation history
 - capability-aware provider selection
 - normalized provider errors
+- an exact allowlist for client-selectable provider and model identifiers
+
+Client-supplied `provider` and `model` values in `/api/chat` are validated against `config.security.requestAllowlist`.
+
+By default, all existing providers are selectable but only each provider's configured default model is selectable. Additional exact model IDs can be added through `JUNI_REQUEST_ALLOWED_MODELS_JSON`, and the selectable provider set can be restricted through `JUNI_REQUEST_ALLOWED_PROVIDERS`.
+
+A model cannot be selected without also selecting its provider. The allowlist is only for client-controlled provider/model selection; normal router defaults and fallback policy remain server-controlled.
 
 ## Event logging
 
@@ -51,7 +58,7 @@ Later knowledge/memory modules should attach provenance records that identify:
 
 The Step 1 event vocabulary already includes memory creation/update/deletion and learning events so future durable stores can make changes auditable.
 
-No durable memory or ledger is implemented yet.
+Durable memory, research, and provenance services are implemented in later steps with tenant + user scoping.
 
 ## Provider isolation
 
@@ -62,7 +69,6 @@ The router can retry and/or fall back without exposing vendor-specific error pay
 ## Realtime voice
 
 Gemini Live is server-side by design in this foundation. The Live API uses stateful WebSocket sessions and supports realtime audio/video input and native audio output. Client microphone access should be introduced later with a secure session/ephemeral-token design rather than shipping a persistent Gemini API key to the browser.
-
 
 ## Step 2 persistent-data boundaries
 
@@ -77,7 +83,6 @@ Deletion of memory is represented by a tombstone rather than a destructive SQL d
 The provenance ledger is append-oriented and cryptographically chained. It is tamper-evident, not distributed consensus and not mathematically immutable.
 
 The HTTP API does not expose raw memory by arbitrary tenant/user headers because Step 1 does not yet provide a real user identity/session authority. The programmatic inspection service is the current boundary until authenticated identity is added.
-
 
 ## Step 3 web-research security
 
