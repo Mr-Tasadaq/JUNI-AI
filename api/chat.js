@@ -170,7 +170,62 @@ export default async function handler(req, res) {
           model: saved.model ?? null,
           usage: null,
           requestId,
-          answerFirst: { hit: true, matchType: "exact" },
+          answerFirst: { hit: true, matchType: "exact", score: 1, knowledgeId: saved.knowledgeId },
+        });
+      }
+
+      const semantic = await app.memory.knowledge.findSemanticSavedAnswer(
+        answerScope,
+        message,
+        { minScore: app.config.answerFirst.semanticThreshold }
+      );
+
+      if (semantic) {
+        try {
+          await app.memory.knowledge.recordAnswerHit(answerScope, semantic.knowledgeId, {
+            matchType: "semantic",
+            score: semantic.score,
+            now: new Date(),
+          });
+        } catch (error) {
+          console.error("JUNI-AI Answer-First semantic hit tracking failed", {
+            code: error?.code,
+            message: error?.message,
+            requestId,
+            knowledgeId: semantic.knowledgeId,
+          });
+        }
+
+        const reply = typeof semantic.answer === "string"
+          ? semantic.answer
+          : (typeof semantic.contentText === "string" && semantic.contentText
+            ? semantic.contentText
+            : JSON.stringify(semantic.answer));
+
+        return json(res, 200, {
+          reply,
+          provider: semantic.provider ?? "saved-answer",
+          model: semantic.model ?? null,
+          usage: null,
+          requestId,
+          answerFirst: {
+            hit: true,
+            matchType: "semantic",
+            score: semantic.score,
+            knowledgeId: semantic.knowledgeId,
+          },
+        });
+      }
+
+      try {
+        await app.memory.knowledge.recordAnswerMiss(answerScope, message, {
+          reason: "no_match",
+        });
+      } catch (error) {
+        console.error("JUNI-AI Answer-First miss tracking failed", {
+          code: error?.code,
+          message: error?.message,
+          requestId,
         });
       }
     } catch (error) {
@@ -214,6 +269,7 @@ export default async function handler(req, res) {
           answer: response.text,
           provider: response.provider,
           model: response.model,
+          sourceRef: requestId,
           retentionExpiresAt,
         });
         candidateStored = true;
