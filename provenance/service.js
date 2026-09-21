@@ -101,45 +101,35 @@ export class ProvenanceService {
     };
   }
 
-  async registerSource(scope, input) {
+  async registerSourceInTransaction(tx, scope, input) {
     assertScope(scope);
     const sourceId = input.id ?? randomUUID();
     const sourceUrl = validateOptionalUrl(input.url ?? input.sourceUrl ?? null);
     const createdAt = new Date().toISOString();
     const metadata = input.metadata && typeof input.metadata === "object" ? structuredClone(input.metadata) : {};
-    const sizeBytes = byteSize({ ...input, id: sourceId, url: sourceUrl, metadata, createdAt });
+    const checksum = input.checksum ?? (input.content == null ? null : hashString(String(input.content)));
+    const sourceSize = byteSize({ ...input, id: sourceId, url: sourceUrl, metadata, createdAt });
+    await this.#quota.assertWithinQuota(scope, sourceSize, { category: "provenance", executor: tx });
+    await tx.execute({
+      sql: "INSERT INTO sources (id,tenant_id,user_id,source_type,url,title,retrieved_at,checksum,provider,tool,metadata_json,created_at,size_bytes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+      args: [sourceId, scope.tenantId, scope.userId, input.sourceType ?? "external", sourceUrl, input.title ?? null, input.retrievedAt ?? createdAt, checksum, input.provider ?? null, input.tool ?? null, toJson(metadata), createdAt, sourceSize],
+    });
+    const provenance = await this.createInTransaction(tx, scope, {
+      subjectId: input.subjectId ?? sourceId, sourceType: input.sourceType ?? "external",
+      sourceUrl, sourceTitle: input.title ?? null, retrievalTimestamp: input.retrievedAt ?? createdAt,
+      sourceHash: checksum, provider: input.provider ?? null, tool: input.tool ?? null,
+      relatedIds: input.relatedIds ?? [], metadata,
+    });
+    return { sourceId, provenance };
+  }
 
+  async registerSource(scope, input) {
+    assertScope(scope);
     const tx = await this.#client.transaction("write");
     try {
-      await this.#quota.assertWithinQuota(scope, sizeBytes, { category: "provenance", executor: tx });
-      await tx.execute({
-        sql: `INSERT INTO sources (
-          id, tenant_id, user_id, source_type, url, title, retrieved_at,
-          checksum, provider, tool, metadata_json, created_at, size_bytes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        args: [
-          sourceId, scope.tenantId, scope.userId, input.sourceType ?? "external",
-          sourceUrl, input.title ?? null, input.retrievedAt ?? new Date().toISOString(),
-          input.checksum ?? (input.content == null ? null : hashString(String(input.content))),
-          input.provider ?? null, input.tool ?? null, toJson(metadata), createdAt, sizeBytes,
-        ],
-      });
-
-      const provenance = await this.createInTransaction(tx, scope, {
-        subjectId: input.subjectId ?? sourceId,
-        sourceType: input.sourceType ?? "external",
-        sourceUrl,
-        sourceTitle: input.title ?? null,
-        retrievalTimestamp: input.retrievedAt ?? createdAt,
-        sourceHash: input.checksum ?? null,
-        provider: input.provider ?? null,
-        tool: input.tool ?? null,
-        relatedIds: input.relatedIds ?? [],
-        metadata,
-      });
-
+      const result = await this.registerSourceInTransaction(tx, scope, input);
       await tx.commit();
-      return { sourceId, provenance };
+      return result;
     } catch (error) {
       await tx.rollback();
       throw error;
