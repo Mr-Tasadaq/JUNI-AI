@@ -71,3 +71,19 @@ test("loads explicit canonical request identity scope", () => {
   assert.equal(config.identity.fixedUserId, "user-test");
   assert.equal(config.identity.allowIdentityHeaders, true);
 });
+
+
+test("bounds the Answer-First semantic threshold to 0.80 through 0.95", () => {
+  assert.equal(
+    loadConfig({ JUNI_ANSWER_FIRST_SEMANTIC_THRESHOLD: "0.75" }).answerFirst.semanticThreshold,
+    0.8
+  );
+  assert.equal(
+    loadConfig({ JUNI_ANSWER_FIRST_SEMANTIC_THRESHOLD: "0.99" }).answerFirst.semanticThreshold,
+    0.95
+  );
+  assert.equal(
+    loadConfig({ JUNI_ANSWER_FIRST_SEMANTIC_THRESHOLD: "0.91" }).answerFirst.semanticThreshold,
+    0.91
+  );
+});
