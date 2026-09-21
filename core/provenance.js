@@ -14,6 +14,9 @@ export const PROVENANCE_EVENTS = Object.freeze([
   "superseded",
   "corrected",
   "source_registered",
+  "research_started",
+  "research_completed",
+  "research_failed",
 ]);
 
 export function createProvenanceRecord({
