@@ -208,8 +208,15 @@ Security variables:
 
 - `JUNI_API_TOKEN`
 - `JUNI_ALLOWED_ORIGIN`
+- `JUNI_AUTH_COOKIE_NAME`
+- `JUNI_AUTH_COOKIE_MAX_AGE_SECONDS`
+- `JUNI_IDENTITY_DEFAULT_TENANT_ID`
+- `JUNI_IDENTITY_DEFAULT_USER_ID`
+- `JUNI_IDENTITY_ALLOW_HEADERS`
 - `JUNI_MAX_MESSAGE_LENGTH`
 - `JUNI_MAX_HISTORY`
+- `JUNI_REQUEST_ALLOWED_PROVIDERS`
+- `JUNI_REQUEST_ALLOWED_MODELS_JSON`
 
 Operational variables:
 
@@ -371,7 +378,9 @@ Quota and retention settings are configured through the Step 2 variables in .env
 
 See docs/MEMORY.md, docs/ARCHITECTURE.md, and docs/SECURITY.md.
 
-Step 3 can add authenticated end-user memory HTTP APIs, live research ingestion, and other tools on top of these scoped services without coupling them to a model provider.
+Step 4A — canonical authenticated request identity now provides one scope contract across persistent HTTP features. It prefers a trusted authenticated identity, supports an explicitly enabled internal header mode, and can use an explicitly configured server-fixed tenant/user scope. It fails closed when no trusted scope is available.
+
+The current access-code flow is still a single application credential; it does not by itself create per-user accounts. True multi-user identity requires a trusted session/JWT/OAuth layer that supplies `tenantId` and `userId`.
 
 ## Step 3 prerequisites
 
