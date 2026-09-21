@@ -17,6 +17,8 @@ const elements = {
   themeIcon: document.querySelector("#themeIcon"),
   accessCodeButton: document.querySelector("#accessCodeButton"),
   menuButton: document.querySelector("#menuButton"),
+  researchToggle: document.querySelector("#researchToggle"),
+  researchHint: document.querySelector("#researchHint"),
 };
 
 let chats = loadChats();
@@ -177,6 +179,35 @@ function renderMessage(message) {
   content.textContent = message.content;
 
   body.append(role, content);
+
+  if (message.research?.sources?.length) {
+    const panel = document.createElement("div");
+    panel.className = "research-panel";
+    const heading = document.createElement("div");
+    heading.className = "research-panel-title";
+    heading.textContent = "Research sources";
+    const list = document.createElement("div");
+    list.className = "research-sources";
+    message.research.sources.slice(0, 12).forEach((source) => {
+      const link = document.createElement("a");
+      link.href = source.canonical_url || source.canonicalUrl || source.url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = source.title || source.domain || source.url;
+      const meta = document.createElement("span");
+      meta.textContent = " · " + (source.domain || source.url);
+      link.append(meta);
+      list.append(link);
+    });
+    panel.append(heading, list);
+    if (message.research.warnings?.length) {
+      const warning = document.createElement("div");
+      warning.className = "research-warning";
+      warning.textContent = message.research.warnings.join(" ");
+      panel.append(warning);
+    }
+    body.append(panel);
+  }
   row.append(avatar, body);
   elements.messages.appendChild(row);
 }
@@ -207,15 +238,17 @@ async function sendMessage() {
   autoResize();
   saveChats();
   render();
-  showTyping();
+  const researchEnabled = Boolean(elements.researchToggle?.checked);
+  showTyping(researchEnabled);
   isGenerating = true;
   updateComposerState();
 
   try {
-    const response = await requestAssistant(text, chat.messages);
+    const response = await requestAssistant(text, chat.messages, researchEnabled);
     chat.messages.push({
       role: "assistant",
-      content: response,
+      content: response.reply,
+      research: response.research ?? null,
       createdAt: Date.now(),
     });
   } catch (error) {
@@ -233,18 +266,26 @@ async function sendMessage() {
   }
 }
 
-async function requestAssistant(text, history, allowAuthRetry = true) {
-  const payload = {
-    message: text,
-    messages: history,
-  };
+async function requestAssistant(text, history, researchEnabled = false, allowAuthRetry = true) {
+  const payload = researchEnabled
+    ? {
+        action: "research",
+        query: text,
+        mode: "RESEARCH",
+        citationRequired: true,
+        allowKnowledgeCandidate: false,
+      }
+    : {
+        message: text,
+        messages: history,
+      };
 
   try {
     const headers = { "Content-Type": "application/json" };
     const accessToken = localStorage.getItem(AUTH_KEY);
     if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
 
-    const response = await fetch("/api/chat", {
+    const response = await fetch(researchEnabled ? "/api/research" : "/api/chat", {
       method: "POST",
       headers,
       body: JSON.stringify(payload),
@@ -253,7 +294,10 @@ async function requestAssistant(text, history, allowAuthRetry = true) {
     if (response.ok) {
       const data = await response.json();
       if (typeof data?.reply === "string" && data.reply.trim()) {
-        return data.reply.trim();
+        return { reply: data.reply.trim(), research: null };
+      }
+      if (researchEnabled && typeof data?.answer === "string") {
+        return { reply: data.answer.trim(), research: data };
       }
       throw new Error("The server returned an invalid response.");
     }
@@ -266,7 +310,7 @@ async function requestAssistant(text, history, allowAuthRetry = true) {
       const supplied = window.prompt("Enter your JUNI-AI access code:");
       if (supplied?.trim()) {
         localStorage.setItem(AUTH_KEY, supplied.trim());
-        return requestAssistant(text, history, false);
+        return requestAssistant(text, history, researchEnabled, false);
       }
       return "JUNI-AI needs an access code for the server API. Use “Set access code” in the sidebar.";
     }
@@ -331,7 +375,7 @@ function demoReply(text) {
   return "Demo mode is active. Your message was saved locally. Add the JUNI-AI access code and configure the server environment to enable live AI responses.";
 }
 
-function showTyping() {
+function showTyping(isResearching = false) {
   const row = document.createElement("article");
   row.className = "message assistant";
   row.id = "typingIndicator";
@@ -345,7 +389,7 @@ function showTyping() {
 
   const role = document.createElement("div");
   role.className = "message-role";
-  role.textContent = "JUNI-AI";
+  role.textContent = isResearching ? "JUNI-AI · researching" : "JUNI-AI";
 
   const typing = document.createElement("div");
   typing.className = "typing";
