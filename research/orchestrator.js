@@ -26,6 +26,23 @@ export class ResearchOrchestrator {
     const seenUrls=new Map(); let searchCalls=0; let retrievalCount=0; let cacheHits=0;
     try {
       if(request.urls.length){
+        if(request.mode==="URL_ANALYSIS"){
+          try{
+            const contextual=await this.#router.research({
+              query:request.query||"Analyze the provided URLs.",
+              urls:request.urls,
+              requestId:request.requestId,
+              provider:request.provider,
+              model:request.model,
+              signal:input.signal,
+            },{operation:"url_context"});
+            native.push(...(contextual?.nativeCitations??[]));
+            await this.#storage.addOperation(scope,{sessionId:session.id,operationType:"url_context",status:"completed",url:request.urls.join(","),provider:contextual?.provider??null,model:contextual?.model??null,usage:contextual?.usage??{},metadata:{nativeCitationCount:contextual?.nativeCitations?.length??0}});
+          }catch(error){
+            warnings.push("Provider URL-context retrieval was unavailable; controlled direct retrieval was used.");
+            await this.#storage.addOperation(scope,{sessionId:session.id,operationType:"url_context",status:"failed",url:request.urls.join(","),provider:request.provider??null,model:request.model??null,errorCode:error.code??"RESEARCH_CAPABILITY_UNAVAILABLE",metadata:{message:error.message}});
+          }
+        }
         const result=await this.#retrieveUserUrls(scope,session.id,request,seenUrls);
         allSources.push(...result.sources);retrievalCount+=result.retrievalCount;cacheHits+=result.cacheHits;
       }
