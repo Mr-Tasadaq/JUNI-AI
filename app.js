@@ -33,6 +33,11 @@ const elements = {
   attachmentList: document.querySelector("#attachmentList"),
   voiceButton: document.querySelector("#voiceButton"),
   voiceStatus: document.querySelector("#voiceStatus"),
+  authGate: document.querySelector("#authGate"),
+  authForm: document.querySelector("#authForm"),
+  authInput: document.querySelector("#accessCodeInput"),
+  authStatus: document.querySelector("#authStatus"),
+  authCancelButton: document.querySelector("#authCancelButton"),
 };
 
 let chats = loadChats();
@@ -121,6 +126,8 @@ document.addEventListener("keydown", (event) => {
 elements.attachButton?.addEventListener("click", () => elements.imageInput?.click());
 elements.imageInput?.addEventListener("change", handleImageSelection);
 elements.voiceButton?.addEventListener("click", toggleVoice);
+elements.authForm?.addEventListener("submit", handleAuthSubmit);
+elements.authCancelButton?.addEventListener("click", closeAuthGate);
 
 elements.themeButton.addEventListener("click", () => {
   const nextTheme = document.documentElement.dataset.theme === "light" ? "dark" : "light";
@@ -160,6 +167,36 @@ function startStartupSequence() {
     screen.setAttribute("aria-hidden", "true");
     window.setTimeout(() => screen.remove(), reducedMotion ? 0 : 260);
   }, reducedMotion ? 220 : 1100);
+}
+
+function openAuthGate(message = "") {
+  if (!elements.authGate) return;
+  elements.authGate.hidden = false;
+  document.body.classList.add("auth-open");
+  if (elements.authStatus) elements.authStatus.textContent = message;
+  window.setTimeout(() => elements.authInput?.focus(), 30);
+}
+
+function closeAuthGate() {
+  if (!elements.authGate) return;
+  elements.authGate.hidden = true;
+  document.body.classList.remove("auth-open");
+  if (elements.authStatus) elements.authStatus.textContent = "";
+}
+
+async function handleAuthSubmit(event) {
+  event.preventDefault();
+  const code = elements.authInput?.value.trim();
+  if (!code) return;
+  if (elements.authStatus) elements.authStatus.textContent = "Checking access…";
+  const result = await authenticateWithAccessCode(code);
+  if (result.ok) {
+    if (elements.authInput) elements.authInput.value = "";
+    closeAuthGate();
+    refreshServiceStatus();
+  } else if (elements.authStatus) {
+    elements.authStatus.textContent = result.error || "Access was rejected. Try again.";
+  }
 }
 
 function activeConversationId() {
@@ -805,7 +842,7 @@ async function setAccessCode() {
 
   if (next.trim()) {
     const result = await authenticateWithAccessCode(next.trim());
-    window.alert(result.ok ? "Access code saved securely in an HttpOnly session cookie." : result.error);
+    if (result.ok) refreshServiceStatus(); else openAuthGate(result.error || "Access was rejected.");
     if (result.ok) refreshServiceStatus();
     return;
   }
