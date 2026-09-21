@@ -512,3 +512,28 @@ CREATE TABLE IF NOT EXISTS knowledge_candidates (
 );
 CREATE INDEX IF NOT EXISTS idx_knowledge_candidates_scope ON knowledge_candidates (tenant_id, user_id, status, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_knowledge_candidates_session ON knowledge_candidates (tenant_id, user_id, session_id);
+
+CREATE TABLE IF NOT EXISTS voice_sessions (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  model TEXT NOT NULL,
+  status TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  connected_at TEXT,
+  ended_at TEXT,
+  reconnect_count INTEGER NOT NULL DEFAULT 0,
+  interruption_count INTEGER NOT NULL DEFAULT 0,
+  tool_call_count INTEGER NOT NULL DEFAULT 0,
+  input_bytes INTEGER NOT NULL DEFAULT 0,
+  output_bytes INTEGER NOT NULL DEFAULT 0,
+  duration_ms INTEGER,
+  close_reason TEXT,
+  error_code TEXT,
+  metadata_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_voice_sessions_scope ON voice_sessions (tenant_id, user_id, created_at DESC);
