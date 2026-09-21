@@ -136,4 +136,10 @@ test("chat serves an exact saved answer before provider availability is checked"
   assert.equal(res.body.provider, "openai");
   assert.equal(res.body.model, "gpt-5.5");
   assert.ok(res.body.requestId);
+
+  const verify = createJuniMemoryApplication({ config });
+  await verify.ready();
+  const tracked = await verify.knowledge.findExactSavedAnswer(scope, "how do I install JUNI-AI?");
+  assert.equal(tracked.hitCount, 1);
+  await verify.db.client.close?.();
 });
