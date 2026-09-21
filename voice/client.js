@@ -31,6 +31,7 @@ export class VoiceClient {
   #captionEnabled = false;
   #startedAt = 0;
   #goAway = false;
+  #muted = false;
   #onState;
   #onCaption;
   #onEvent;
@@ -140,6 +141,15 @@ export class VoiceClient {
 
   setVolume(value) {
     this.#audioOutput?.setVolume(value);
+  }
+
+  setMuted(muted) {
+    this.#muted = Boolean(muted);
+    this.#onEvent({ type: "voice.mute.changed", sessionId: this.#sessionId, muted: this.#muted });
+  }
+
+  get muted() {
+    return this.#muted;
   }
 
   async retry() {
@@ -356,7 +366,7 @@ export class VoiceClient {
   }
 
   #sendAudioBuffer(buffer) {
-    if (!this.#socket || this.#socket.readyState !== 1 || !this.#setupReady || this.#closedByUser) return;
+    if (this.#muted || !this.#socket || this.#socket.readyState !== 1 || !this.#setupReady || this.#closedByUser) return;
     try {
       const bytes = new Uint8Array(buffer);
       const base64 = toBase64(bytes);
@@ -570,7 +580,18 @@ export class VoiceClient {
   async #fail(code, message) {
     this.#onError({ code, message });
     this.#onEvent({ type: "voice.session.failed", sessionId: this.#sessionId, code });
-    await this.#recordSession({ kind: "voice_session_failed", status: "error", errorCode: code, metadata: { message: sanitizeText(message) } });
+    await this.#recordSession({
+      kind: "voice_session_failed",
+      status: "error",
+      errorCode: code,
+      inputBytes: this.#machine?.counters.inputBytes ?? 0,
+      outputBytes: this.#machine?.counters.outputBytes ?? 0,
+      metadata: {
+        message: sanitizeText(message),
+        reconnectCount: this.#machine?.counters.reconnectCount ?? 0,
+        interruptionCount: this.#machine?.counters.interruptionCount ?? 0,
+      },
+    });
     this.#safeTransition("error", { code });
     try { await this.#audioInput?.stop(); } catch {}
     try { this.#socket?.close(); } catch {}
