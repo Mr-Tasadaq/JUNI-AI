@@ -157,6 +157,14 @@ export function loadConfig(env = process.env) {
       ),
       embeddingModel: stringOrUndefined(env.JUNI_ANSWER_FIRST_EMBEDDING_MODEL) ?? "text-embedding-3-small",
     },
+    context: {
+      enabled: boolOrDefault(env.JUNI_CONTEXT_ENABLED, true),
+      maxMessages: intOrDefault(env.JUNI_CONTEXT_MAX_MESSAGES, 20, 1),
+      preferenceLimit: intOrDefault(env.JUNI_CONTEXT_PREFERENCE_LIMIT, 8, 1),
+    },
+    export: {
+      approvedAnswersEnabled: boolOrDefault(env.JUNI_APPROVED_ANSWER_EXPORT_ENABLED, false),
+    },
     security: {
       apiToken: stringOrUndefined(env.JUNI_API_TOKEN),
       allowedOrigin: stringOrUndefined(env.JUNI_ALLOWED_ORIGIN),
