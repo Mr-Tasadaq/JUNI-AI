@@ -3,6 +3,8 @@ import { createJuniApplication } from "../core/app.js";
 import { authorizeRequest, checkOrigin, validateProviderModelSelection } from "../core/security.js";
 import { configuredProviderNames } from "../core/config.js";
 import { RouterError } from "../core/errors.js";
+import { resolveResearchScope } from "../research/http-identity.js";
+import { isCacheableAnswerRequest } from "../memory/answer-service.js";
 
 let application;
 
@@ -74,6 +76,7 @@ export default async function handler(req, res) {
 
   res.setHeader("X-RateLimit-Limit", String(rate.limit));
   res.setHeader("X-RateLimit-Remaining", String(rate.remaining));
+  res.setHeader("X-RateLimit-Store", rate.store);
 
   if (!rate.allowed) {
     res.setHeader("Retry-After", String(rate.retryAfter));
@@ -120,6 +123,56 @@ export default async function handler(req, res) {
     metadata: { requestId, requiresWebResearch: Boolean(body.requiresWebResearch) },
   };
 
+  let answerScope = null;
+  if (app.config.app.featureFlags.answerFirst && app.config.storage.enabled) {
+    try {
+      answerScope = resolveResearchScope(req, app.config);
+    } catch {
+      answerScope = null;
+    }
+  }
+
+  if (answerScope) {
+    try {
+      const match = await app.memory.answers.answerFirst(answerScope, {
+        message,
+        task: request.task,
+        messages: request.messages,
+        cacheAnswer: body.cacheAnswer,
+        metadata: {
+          ...request.metadata,
+          timeSensitive: body.timeSensitive === true,
+          personalized: body.personalized === true,
+          turnDependent: body.turnDependent === true,
+        },
+      }, {
+        semanticThreshold: app.config.app.answerFirst.semanticThreshold,
+      });
+
+      if (match.hit) {
+        return json(res, 200, {
+          reply: match.answer,
+          provider: match.provider,
+          model: match.model,
+          usage: null,
+          requestId,
+          answerFirst: {
+            hit: true,
+            matchType: match.matchType,
+            score: match.score,
+            answerId: match.answerId,
+          },
+        });
+      }
+    } catch (error) {
+      console.error("JUNI-AI answer-first lookup failed", {
+        code: error?.code,
+        message: error?.message,
+        requestId,
+      });
+    }
+  }
+
   try {
     if (request.stream) {
       return await streamResponse(
@@ -131,12 +184,60 @@ export default async function handler(req, res) {
 
     const response = await app.juni.generate(request);
 
+    let candidateId = null;
+    if (
+      answerScope
+      && isCacheableAnswerRequest({
+        message,
+        task: request.task,
+        messages: request.messages,
+        cacheAnswer: body.cacheAnswer,
+        metadata: {
+          requiresWebResearch: request.metadata.requiresWebResearch,
+          timeSensitive: body.timeSensitive === true,
+          personalized: body.personalized === true,
+          turnDependent: body.turnDependent === true,
+        },
+      })
+      && typeof response.text === "string"
+      && response.text.trim()
+    ) {
+      try {
+        const candidate = await app.memory.answers.createCandidate(answerScope, {
+          question: message,
+          answer: response.text,
+          provider: response.provider,
+          model: response.model,
+          sourceType: "model",
+          sourceRef: requestId,
+          ttlSeconds: app.config.app.answerFirst.candidateTtlSeconds,
+          metadata: {
+            requestId,
+            task: request.task,
+            kind: "knowledge_answer",
+          },
+          requestId,
+        });
+        candidateId = candidate?.id ?? null;
+      } catch (error) {
+        console.error("JUNI-AI answer candidate write failed", {
+          code: error?.code,
+          message: error?.message,
+          requestId,
+        });
+      }
+    }
+
     return json(res, 200, {
       reply: response.text ?? "",
       provider: response.provider,
       model: response.model,
       usage: response.usage ?? null,
       requestId,
+      answerFirst: {
+        hit: false,
+        candidateId,
+      },
     });
   } catch (error) {
     if (error instanceof RouterError) {
