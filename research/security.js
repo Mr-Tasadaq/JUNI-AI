@@ -2,6 +2,7 @@ import dns from "node:dns/promises";
 import net from "node:net";
 
 const PRIVATE_IPV4_RANGES = Object.freeze([
+  ["0.0.0.0", 8],
   ["10.0.0.0", 8],
   ["100.64.0.0", 10],
   ["127.0.0.0", 8],
