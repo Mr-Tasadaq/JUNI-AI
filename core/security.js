@@ -1,5 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 
+const MAX_SELECTION_IDENTIFIER_LENGTH = 128;
+
 export function safeTokenEquals(supplied, expected) {
   if (!supplied || !expected) return false;
   const a = Buffer.from(String(supplied));
@@ -14,6 +16,87 @@ export function authorizeRequest(req, expectedToken) {
   return safeTokenEquals(header.slice(7).trim(), expectedToken)
     ? { allowed: true, reason: "authorized" }
     : { allowed: false, reason: "invalid_token" };
+}
+
+export function validateProviderModelSelection({ provider, model } = {}, policy = {}) {
+  const normalizedProvider = provider == null ? undefined : provider;
+  const normalizedModel = model == null ? undefined : model;
+
+  if (normalizedProvider !== undefined && typeof normalizedProvider !== "string") {
+    return {
+      allowed: false,
+      code: "INVALID_PROVIDER",
+      error: "provider must be a string.",
+    };
+  }
+
+  if (normalizedModel !== undefined && typeof normalizedModel !== "string") {
+    return {
+      allowed: false,
+      code: "INVALID_MODEL",
+      error: "model must be a string.",
+    };
+  }
+
+  const selectedProvider = typeof normalizedProvider === "string"
+    ? normalizedProvider.trim()
+    : undefined;
+  const selectedModel = typeof normalizedModel === "string"
+    ? normalizedModel.trim()
+    : undefined;
+
+  if (selectedProvider && selectedProvider.length > MAX_SELECTION_IDENTIFIER_LENGTH) {
+    return {
+      allowed: false,
+      code: "INVALID_PROVIDER",
+      error: "provider is too long.",
+    };
+  }
+
+  if (selectedModel && selectedModel.length > MAX_SELECTION_IDENTIFIER_LENGTH) {
+    return {
+      allowed: false,
+      code: "INVALID_MODEL",
+      error: "model is too long.",
+    };
+  }
+
+  const allowedProviders = Array.isArray(policy.providers) ? policy.providers : [];
+  if (selectedProvider && !allowedProviders.includes(selectedProvider)) {
+    return {
+      allowed: false,
+      code: "PROVIDER_NOT_ALLOWED",
+      error: "The requested provider is not allowed.",
+    };
+  }
+
+  if (selectedModel && !selectedProvider) {
+    return {
+      allowed: false,
+      code: "MODEL_REQUIRES_PROVIDER",
+      error: "provider is required when model is specified.",
+    };
+  }
+
+  if (selectedModel) {
+    const allowedModels = Array.isArray(policy.modelsByProvider?.[selectedProvider])
+      ? policy.modelsByProvider[selectedProvider]
+      : [];
+
+    if (!allowedModels.includes(selectedModel)) {
+      return {
+        allowed: false,
+        code: "MODEL_NOT_ALLOWED",
+        error: "The requested model is not allowed for the selected provider.",
+      };
+    }
+  }
+
+  return {
+    allowed: true,
+    provider: selectedProvider,
+    model: selectedModel,
+  };
 }
 
 export function checkOrigin(origin, allowedOrigin) {
