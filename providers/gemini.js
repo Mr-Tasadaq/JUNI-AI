@@ -106,11 +106,9 @@ export function createGeminiProvider(config, { identity } = {}) {
         "text",
         "vision",
         "audioInput",
-        "audioOutput",
         "streaming",
         "toolCalling",
         "webResearch",
-        "liveVoice",
       ]);
     },
 
