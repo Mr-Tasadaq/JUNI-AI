@@ -441,3 +441,17 @@ The GitHub exporter writes answer content to the configured repository. Because 
 Step 5 can expand the Gemini Live browser experience using secure session credentials.
 
 Step 2 intentionally stops before unrestricted autonomous learning, Internet access, browser automation, full voice/video UX, and a distributed blockchain network.
+
+## Step 8 — Tools & agent execution
+
+Implemented:
+
+- provider-neutral tool registry with explicit definitions and JSON-schema argument validation
+- tool-specific execution timeouts and result-size limits
+- mutating tools can require explicit approval before execution
+- tool execution receives a bounded AbortSignal/context
+- `JUNI_TOOLS_ENABLED` prevents tool definitions from being sent when disabled
+- existing Juni tool loop remains bounded by `JUNI_MAX_TOOL_ROUNDS`
+- tool failures and latency continue to be represented through structured events
+
+Current repository code does not auto-register arbitrary system, shell, filesystem, browser, or external-API tools. Tool implementations must be explicitly registered by application code.
