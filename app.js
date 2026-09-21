@@ -15,6 +15,16 @@ const elements = {
   themeButton: document.querySelector("#themeButton"),
   themeIcon: document.querySelector("#themeIcon"),
   accessCodeButton: document.querySelector("#accessCodeButton"),
+  answerReviewButton: document.querySelector("#answerReviewButton"),
+  statusPill: document.querySelector("#statusPill"),
+  statusDot: document.querySelector("#statusDot"),
+  statusText: document.querySelector("#statusText"),
+  answerModal: document.querySelector("#answerModal"),
+  answerModalClose: document.querySelector("#answerModalClose"),
+  answerRefreshButton: document.querySelector("#answerRefreshButton"),
+  answerCandidateList: document.querySelector("#answerCandidateList"),
+  answerReviewStatus: document.querySelector("#answerReviewStatus"),
+  composerNotice: document.querySelector("#composerNotice"),
   menuButton: document.querySelector("#menuButton"),
   researchToggle: document.querySelector("#researchToggle"),
   researchHint: document.querySelector("#researchHint"),
@@ -49,6 +59,7 @@ if (!activeChatId) {
 
 applyStoredTheme();
 render();
+refreshServiceStatus();
 
 elements.composer.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -95,6 +106,15 @@ elements.clearHistory.addEventListener("click", () => {
 elements.exportButton.addEventListener("click", exportActiveChat);
 
 elements.accessCodeButton.addEventListener("click", setAccessCode);
+elements.answerReviewButton?.addEventListener("click", openAnswerReview);
+elements.answerModalClose?.addEventListener("click", closeAnswerReview);
+elements.answerRefreshButton?.addEventListener("click", () => loadAnswerCandidates(true));
+elements.answerModal?.addEventListener("click", (event) => {
+  if (event.target === elements.answerModal) closeAnswerReview();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && elements.answerModal && !elements.answerModal.hidden) closeAnswerReview();
+});
 
 elements.attachButton?.addEventListener("click", () => elements.imageInput?.click());
 elements.imageInput?.addEventListener("change", handleImageSelection);
@@ -206,6 +226,18 @@ function renderMessage(message) {
 
   body.append(role, content);
 
+  if (Array.isArray(message.attachments) && message.attachments.length) {
+    const attachments = document.createElement("div");
+    attachments.className = "message-attachments";
+    message.attachments.forEach((item) => {
+      const chip = document.createElement("span");
+      chip.className = "message-attachment-chip";
+      chip.textContent = item.name || item.mimeType || "Image";
+      attachments.appendChild(chip);
+    });
+    body.append(attachments);
+  }
+
   if (message.research?.sources?.length) {
     const panel = document.createElement("div");
     panel.className = "research-panel";
@@ -271,10 +303,19 @@ async function sendMessage() {
 
   try {
     const attachmentsForRequest = pendingImages.slice();
-  pendingImages = [];
-  renderAttachmentList();
+    if (attachmentsForRequest.length) {
+      const userMessage = chat.messages.at(-1);
+      if (userMessage?.role === "user") {
+        userMessage.attachments = attachmentsForRequest.map((item) => ({
+          name: item.name,
+          mimeType: item.mimeType,
+        }));
+      }
+    }
+    pendingImages = [];
+    renderAttachmentList();
 
-  const response = await requestAssistant(text, chat.messages, researchEnabled, true, attachmentsForRequest);
+    const response = await requestAssistant(text, chat.messages, researchEnabled, true, attachmentsForRequest);
     chat.messages.push({
       role: "assistant",
       content: response.reply,
@@ -395,29 +436,53 @@ async function handleImageSelection(event) {
 
   const allowed = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
   const maxBytes = 2 * 1024 * 1024;
+  const rejected = [];
 
   for (const file of files) {
-    if (pendingImages.length >= 4) break;
-    if (!allowed.has(file.type) || file.size <= 0 || file.size > maxBytes) continue;
+    if (pendingImages.length >= 4) {
+      rejected.push("maximum 4 images");
+      break;
+    }
+    if (!allowed.has(file.type)) {
+      rejected.push(file.name + " (unsupported type)");
+      continue;
+    }
+    if (file.size <= 0 || file.size > maxBytes) {
+      rejected.push(file.name + " (over 2 MB)");
+      continue;
+    }
 
-    const dataUrl = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || ""));
-      reader.onerror = () => reject(reader.error || new Error("Could not read image."));
-      reader.readAsDataURL(file);
-    });
+    try {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(reader.error || new Error("Could not read image."));
+        reader.readAsDataURL(file);
+      });
 
-    const comma = dataUrl.indexOf(",");
-    if (comma < 0) continue;
+      const comma = dataUrl.indexOf(",");
+      if (comma < 0) {
+        rejected.push(file.name + " (invalid image data)");
+        continue;
+      }
 
-    pendingImages.push({
-      name: file.name,
-      mimeType: file.type,
-      data: dataUrl.slice(comma + 1),
-    });
+      pendingImages.push({
+        name: file.name,
+        mimeType: file.type,
+        data: dataUrl.slice(comma + 1),
+      });
+    } catch {
+      rejected.push(file.name + " (could not be read)");
+    }
   }
 
   renderAttachmentList();
+  setComposerNotice(
+    rejected.length
+      ? "Some attachments were skipped: " + rejected.slice(0, 3).join(", ") + (rejected.length > 3 ? "…" : "")
+      : "",
+    Boolean(rejected.length),
+  );
 }
 
 function setVoiceStatus(message, visible = true) {
@@ -708,6 +773,7 @@ async function setAccessCode() {
   if (next.trim()) {
     const result = await authenticateWithAccessCode(next.trim());
     window.alert(result.ok ? "Access code saved securely in an HttpOnly session cookie." : result.error);
+    if (result.ok) refreshServiceStatus();
     return;
   }
 
@@ -750,6 +816,15 @@ function updateComposerState() {
   const length = elements.input.value.length;
   elements.charCount.textContent = length + " / 4000";
   elements.send.disabled = isGenerating || !elements.input.value.trim();
+  if (elements.attachButton) elements.attachButton.disabled = isGenerating;
+  if (elements.researchToggle) elements.researchToggle.disabled = isGenerating || Boolean(pendingImages.length);
+  if (elements.voiceButton && isGenerating) elements.voiceButton.disabled = true;
+}
+
+function setComposerNotice(message, visible = true) {
+  if (!elements.composerNotice) return;
+  elements.composerNotice.hidden = !visible;
+  elements.composerNotice.textContent = visible ? message : "";
 }
 
 function autoResize() {
@@ -793,4 +868,169 @@ function exportActiveChat() {
   link.download = "juni-ai-chat.md";
   link.click();
   URL.revokeObjectURL(url);
+}
+
+
+async function refreshServiceStatus() {
+  if (!elements.statusText) return;
+  try {
+    const response = await fetch("/api/health", { credentials: "same-origin", cache: "no-store" });
+    let data = null;
+    try { data = await response.json(); } catch {}
+    const healthy = response.ok && data?.status === "ok";
+    const degraded = data?.status === "degraded" || response.status === 503;
+
+    elements.statusText.textContent = healthy ? "Ready" : degraded ? "Limited" : response.status === 401 ? "Sign in" : "Offline";
+    elements.statusPill?.classList.toggle("degraded", !healthy && degraded);
+    elements.statusPill?.classList.toggle("offline", !healthy && !degraded);
+
+    if (!healthy && response.status !== 401) {
+      elements.statusPill?.title = data?.checks?.providers?.length
+        ? "One or more backend checks need attention."
+        : "The JUNI-AI service is not currently ready.";
+    } else {
+      elements.statusPill?.title = "";
+    }
+  } catch {
+    elements.statusText.textContent = "Offline";
+    elements.statusPill?.classList.add("offline");
+  }
+}
+
+async function openAnswerReview() {
+  if (!elements.answerModal) return;
+  elements.answerModal.hidden = false;
+  document.body.classList.add("modal-open");
+  await loadAnswerCandidates(false);
+  elements.answerModalClose?.focus();
+}
+
+function closeAnswerReview() {
+  if (!elements.answerModal) return;
+  elements.answerModal.hidden = true;
+  document.body.classList.remove("modal-open");
+}
+
+async function loadAnswerCandidates(announceRefresh = false, allowAuthRetry = true) {
+  if (!elements.answerCandidateList) return;
+  elements.answerCandidateList.replaceChildren();
+  if (elements.answerReviewStatus) {
+    elements.answerReviewStatus.textContent = announceRefresh ? "Refreshing…" : "Loading…";
+  }
+
+  try {
+    const response = await fetch("/api/answers?action=candidates&limit=20", {
+      credentials: "same-origin",
+      cache: "no-store",
+    });
+
+    if (response.status === 401 && allowAuthRetry) {
+      const supplied = window.prompt("Enter your JUNI-AI access code to review saved answers:");
+      if (supplied?.trim()) {
+        const authenticated = await authenticateWithAccessCode(supplied.trim());
+        if (authenticated.ok) return loadAnswerCandidates(announceRefresh, false);
+        renderCandidateMessage(authenticated.error);
+        return;
+      }
+    }
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      renderCandidateMessage(data?.error || "Saved answers could not be loaded.");
+      return;
+    }
+
+    const candidates = Array.isArray(data?.candidates) ? data.candidates : [];
+    if (elements.answerReviewStatus) {
+      elements.answerReviewStatus.textContent = candidates.length
+        ? candidates.length + " candidate" + (candidates.length === 1 ? "" : "s") + " awaiting review"
+        : "No candidates awaiting review";
+    }
+
+    if (!candidates.length) {
+      renderCandidateMessage("No saved-answer candidates are waiting for approval.");
+      return;
+    }
+
+    candidates.forEach(renderCandidateCard);
+  } catch (error) {
+    renderCandidateMessage(error?.message || "Unable to reach the saved-answer service.");
+  }
+}
+
+function renderCandidateMessage(message) {
+  if (!elements.answerCandidateList) return;
+  elements.answerCandidateList.replaceChildren();
+  const empty = document.createElement("div");
+  empty.className = "candidate-empty";
+  empty.textContent = message;
+  elements.answerCandidateList.append(empty);
+  if (elements.answerReviewStatus) elements.answerReviewStatus.textContent = "";
+}
+
+function renderCandidateCard(candidate) {
+  const card = document.createElement("article");
+  card.className = "candidate-card";
+
+  const question = document.createElement("h3");
+  question.textContent = candidate.title || "Saved answer candidate";
+
+  const answer = document.createElement("p");
+  answer.className = "candidate-answer";
+  answer.textContent = candidate.content_text || "No answer text available.";
+
+  const meta = document.createElement("div");
+  meta.className = "candidate-meta";
+  const created = candidate.created_at ? new Date(candidate.created_at).toLocaleString() : "Unknown time";
+  meta.textContent = "Generated " + created + (candidate.source_type ? " · source: " + candidate.source_type : "");
+
+  const actions = document.createElement("div");
+  actions.className = "candidate-actions";
+
+  const reject = document.createElement("button");
+  reject.type = "button";
+  reject.className = "secondary-button";
+  reject.textContent = "Reject";
+  reject.addEventListener("click", () => reviewCandidate(candidate.id, "reject", card));
+
+  const approve = document.createElement("button");
+  approve.type = "button";
+  approve.className = "primary-button";
+  approve.textContent = "Approve";
+  approve.addEventListener("click", () => reviewCandidate(candidate.id, "approve", card));
+
+  actions.append(reject, approve);
+  card.append(question, answer, meta, actions);
+  elements.answerCandidateList.append(card);
+}
+
+async function reviewCandidate(id, action, card) {
+  const buttons = [...card.querySelectorAll("button")];
+  buttons.forEach((button) => { button.disabled = true; });
+
+  try {
+    const response = await fetch("/api/answers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ action, id }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data?.error || "The answer review action was rejected.");
+    }
+
+    card.classList.add("candidate-reviewed");
+    card.querySelector(".candidate-actions")?.replaceChildren();
+    if (elements.answerReviewStatus) {
+      elements.answerReviewStatus.textContent = action === "approve"
+        ? "Answer approved and indexed for Answer-First use."
+        : "Candidate rejected and archived.";
+    }
+  } catch (error) {
+    buttons.forEach((button) => { button.disabled = false; });
+    if (elements.answerReviewStatus) {
+      elements.answerReviewStatus.textContent = error?.message || "Answer review failed.";
+    }
+  }
 }
