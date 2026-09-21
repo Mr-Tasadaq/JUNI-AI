@@ -51,5 +51,6 @@ export function createJuniApplication({ env = process.env, tools = createToolReg
     rateLimiter,
     memory,
     research,
+    metrics,
   });
 }
