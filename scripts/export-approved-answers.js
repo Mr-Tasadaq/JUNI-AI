@@ -189,6 +189,11 @@ export async function updateGithubContentFile({
 }
 
 export async function exportApprovedAnswers(env = process.env, fetchImpl = globalThis.fetch) {
+  const enabled = String(env.JUNI_APPROVED_ANSWER_EXPORT_ENABLED ?? "").trim().toLowerCase();
+  if (!["1", "true", "yes", "on"].includes(enabled)) {
+    return { exported: 0, skipped: true, reason: "approved_answer_export_disabled" };
+  }
+
   const database = createJuniDatabase({
     url: required(env.JUNI_DATABASE_URL, "JUNI_DATABASE_URL"),
     authToken: env.JUNI_DATABASE_AUTH_TOKEN?.trim() || undefined,
