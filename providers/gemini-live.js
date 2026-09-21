@@ -30,10 +30,23 @@ export function voiceLiveConfig({ identity, toolDeclarations = [], captionsEnabl
   };
 }
 
-export function createGeminiLiveProvider(config, { identity = buildSystemIdentity() } = {}) {
+export function createGeminiLiveProvider(config, { identity = buildSystemIdentity(), clientFactory = null } = {}) {
   const providerConfig = config.providers.gemini;
-  let client;
+  let clientPromise = null;
   let validatedCache = new Map();
+
+  async function getClient() {
+    if (!clientPromise) {
+      clientPromise = (async () => {
+        if (typeof clientFactory === "function") {
+          return clientFactory({ apiKey: providerConfig.apiKey, apiVersion: config.voice.liveApiVersion });
+        }
+        const { GoogleGenAI } = await asyncLoadGeminiLive();
+        return new GoogleGenAI({ apiKey: providerConfig.apiKey, httpOptions: { apiVersion: config.voice.liveApiVersion } });
+      })();
+    }
+    return clientPromise;
+  }
 
   const provider = {
     name: "gemini-live",
@@ -49,8 +62,7 @@ export function createGeminiLiveProvider(config, { identity = buildSystemIdentit
       const cached = validatedCache.get(model);
       if (!forceRefresh && cached && cached.expiresAt > Date.now()) return cached.value;
 
-      const { GoogleGenAI } = await asyncLoadGeminiLive();
-      client ??= new GoogleGenAI({ apiKey: providerConfig.apiKey, httpOptions: { apiVersion: config.voice.liveApiVersion } });
+      const client = await getClient();
       let info;
       try {
         info = await client.models.get({ model });
@@ -83,8 +95,7 @@ export function createGeminiLiveProvider(config, { identity = buildSystemIdentit
     async createEphemeralToken({ model = providerConfig.liveModel, captionsEnabled = config.voice.captionsEnabled, sessionId = null } = {}) {
       requireGeminiProvider(config);
       const validation = await provider.validateLiveModel({ model });
-      const { GoogleGenAI } = await asyncLoadGeminiLive();
-      client ??= new GoogleGenAI({ apiKey: providerConfig.apiKey, httpOptions: { apiVersion: config.voice.liveApiVersion } });
+      const client = await getClient();
       const now = Date.now();
       const expireTime = new Date(now + config.voice.tokenTtlSeconds * 1000).toISOString();
       const newSessionExpireTime = new Date(now + config.voice.newSessionTtlSeconds * 1000).toISOString();
@@ -131,9 +142,8 @@ export function createGeminiLiveProvider(config, { identity = buildSystemIdentit
     },
 
     async connect(options = {}) {
-      const cfg = requireGeminiProvider(config);
-      const { GoogleGenAI } = await asyncLoadGeminiLive();
-      client ??= new GoogleGenAI({ apiKey: cfg.apiKey });
+      requireGeminiProvider(config);
+      const client = await getClient();
       const validation = await provider.validateLiveModel({ model: options.model || provider.defaultModel });
       const model = validation.model;
       const liveConfig = voiceLiveConfig({ identity, toolDeclarations: options.toolDeclarations ?? [], captionsEnabled: options.captionsEnabled ?? false, resumptionHandle: options.resumptionHandle ?? null });
