@@ -28,6 +28,8 @@ const CATEGORY_QUERIES = Object.freeze({
   logs: [
     "SELECT COALESCE(SUM(size_bytes),0) AS bytes FROM learning_events WHERE tenant_id = ? AND user_id = ?",
     "SELECT COALESCE(SUM(size_bytes),0) AS bytes FROM audit_records WHERE tenant_id = ? AND user_id = ?",
+    "SELECT COALESCE(SUM(size_bytes),0) AS bytes FROM voice_sessions WHERE tenant_id = ? AND user_id = ?",
+    "SELECT COALESCE(SUM(size_bytes),0) AS bytes FROM audit_records WHERE tenant_id = ? AND user_id = ?",
   ],
   cache: [
     "SELECT COALESCE(SUM(size_bytes),0) AS bytes FROM cache_entries WHERE tenant_id = ? AND user_id = ?",

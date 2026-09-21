@@ -19,11 +19,33 @@ const elements = {
   menuButton: document.querySelector("#menuButton"),
   researchToggle: document.querySelector("#researchToggle"),
   researchHint: document.querySelector("#researchHint"),
+  voiceOpenButton: document.querySelector("#voiceOpenButton"),
+  voicePanel: document.querySelector("#voicePanel"),
+  voiceOrb: document.querySelector("#voiceOrb"),
+  voiceState: document.querySelector("#voiceState"),
+  voiceSession: document.querySelector("#voiceSession"),
+  voiceStartButton: document.querySelector("#voiceStartButton"),
+  voiceMuteButton: document.querySelector("#voiceMuteButton"),
+  voiceStopButton: document.querySelector("#voiceStopButton"),
+  voiceRetryButton: document.querySelector("#voiceRetryButton"),
+  voiceCaptionsToggle: document.querySelector("#voiceCaptionsToggle"),
+  voiceVolume: document.querySelector("#voiceVolume"),
+  voiceCaptions: document.querySelector("#voiceCaptions"),
+  voiceCaptionYou: document.querySelector("#voiceCaptionYou"),
+  voiceCaptionJuni: document.querySelector("#voiceCaptionJuni"),
+  voiceToolOffer: document.querySelector("#voiceToolOffer"),
+  voiceToolUrl: document.querySelector("#voiceToolUrl"),
+  voiceToolOpen: document.querySelector("#voiceToolOpen"),
+  voiceError: document.querySelector("#voiceError"),
+  voiceHint: document.querySelector("#voiceHint"),
 };
 
 let chats = loadChats();
 let activeChatId = chats[0]?.id ?? null;
 let isGenerating = false;
+let voiceClient = null;
+let voicePanelOpen = false;
+let voiceToolUrl = null;
 
 if (!activeChatId) {
   activeChatId = createChat();
@@ -86,6 +108,223 @@ elements.themeButton.addEventListener("click", () => {
 elements.menuButton.addEventListener("click", () => {
   document.body.classList.toggle("sidebar-open");
 });
+
+
+elements.voiceOpenButton?.addEventListener("click", () => {
+  if (voiceClient && !["idle","closed","error"].includes(voiceClient.state)) return;
+  voicePanelOpen = !voicePanelOpen;
+  if (elements.voicePanel) elements.voicePanel.hidden = !voicePanelOpen;
+  elements.voiceOpenButton.setAttribute("aria-expanded", String(voicePanelOpen));
+  if (voicePanelOpen) {
+    elements.voiceStartButton?.focus();
+    loadVoiceClient().catch((error) => showVoiceError(normalizeClientError(error)));
+  }
+});
+
+elements.voiceStartButton?.addEventListener("click", async () => {
+  try {
+    const client = await loadVoiceClient();
+    clearVoiceError();
+    await client.start({ captions: Boolean(elements.voiceCaptionsToggle?.checked) });
+  } catch (error) {
+    showVoiceError(normalizeClientError(error));
+  }
+});
+
+elements.voiceMuteButton?.addEventListener("click", async () => {
+  try {
+    if (!voiceClient) return;
+    await voiceClient.setMuted(!voiceClient.muted);
+    updateVoiceControls();
+  } catch (error) {
+    showVoiceError(normalizeClientError(error));
+  }
+});
+
+elements.voiceStopButton?.addEventListener("click", async () => {
+  try {
+    await voiceClient?.stop({ reason: "user" });
+  } catch (error) {
+    showVoiceError(normalizeClientError(error));
+  }
+});
+
+elements.voiceRetryButton?.addEventListener("click", async () => {
+  try {
+    clearVoiceError();
+    await voiceClient?.retry();
+  } catch (error) {
+    showVoiceError(normalizeClientError(error));
+  }
+});
+
+elements.voiceCaptionsToggle?.addEventListener("change", () => {
+  voiceClient?.setCaptionsEnabled(Boolean(elements.voiceCaptionsToggle.checked));
+  if (voiceClient && voiceClient.state !== "idle" && voiceClient.state !== "closed" && voiceClient.state !== "error") {
+    elements.voiceHint.textContent = "Captions changes apply to the next voice connection.";
+  }
+  updateVoiceControls();
+});
+
+elements.voiceVolume?.addEventListener("input", () => {
+  voiceClient?.setVolume(Number(elements.voiceVolume.value));
+});
+
+elements.voiceToolOpen?.addEventListener("click", () => {
+  if (!voiceToolUrl) return;
+  const opened = window.open(voiceToolUrl, "_blank", "noopener,noreferrer");
+  if (opened) {
+    opened.opener = null;
+    hideVoiceToolOffer();
+  }
+});
+
+window.addEventListener("pagehide", () => {
+  voiceClient?.stop({ reason: "pagehide" });
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) voiceClient?.resume?.().catch(() => {});
+});
+
+async function loadVoiceClient() {
+  if (voiceClient) return voiceClient;
+  const module = await import("./voice/client.js");
+  voiceClient = new module.VoiceClient({
+    config: {
+      captionsEnabled: false,
+    },
+    onEvent: handleVoiceEvent,
+  });
+  updateVoiceControls();
+  return voiceClient;
+}
+
+function handleVoiceEvent(event) {
+  const type = event?.type;
+  const data = event?.data || {};
+
+  if (type === "voice.state.changed") {
+    updateVoiceState(data.state, data.sessionId);
+    return;
+  }
+  if (type === "voice.activity.level") {
+    const level = Math.max(0, Math.min(1, Number(data.level) || 0));
+    elements.voiceOrb?.style.setProperty("--voice-level", level.toFixed(3));
+    return;
+  }
+  if (type === "voice.caption.input.interim" || type === "voice.caption.input.final") {
+    elements.voiceCaptionYou.textContent = data.text ? "YOU · " + data.text : "";
+    elements.voiceCaptions.hidden = false;
+    return;
+  }
+  if (type === "voice.caption.output") {
+    elements.voiceCaptionJuni.textContent = data.text ? "JUNI · " + data.text : "";
+    elements.voiceCaptions.hidden = false;
+    return;
+  }
+  if (type === "voice.tool.offer") {
+    showVoiceToolOffer(data.url, data.label);
+    return;
+  }
+  if (type === "voice.session.failed" || type === "voice.session.error") {
+    showVoiceError(normalizeClientError({ code: data.code }));
+    return;
+  }
+  if (type === "voice.session.completed") {
+    elements.voiceOrb?.style.setProperty("--voice-level", "0");
+    if (data.reason === "user" || data.reason === "pagehide") clearVoiceError();
+    updateVoiceControls();
+  }
+  if (type === "voice.session.started") {
+    elements.voiceOpenButton?.setAttribute("aria-expanded", "true");
+  }
+}
+
+function updateVoiceState(state, sessionId = null) {
+  const labels = {
+    idle: "Idle",
+    requesting_permission: "Waiting for microphone permission",
+    connecting: "Connecting to Gemini Live",
+    listening: "Listening",
+    speaking: "Juni is speaking",
+    interrupted: "Interrupted · listening",
+    reconnecting: "Reconnecting",
+    error: "Voice error",
+    closing: "Closing",
+    closed: "Stopped",
+  };
+  elements.voiceState.textContent = labels[state] || "Voice";
+  elements.voiceSession.textContent = sessionId ? "Session " + sessionId : "No active voice session";
+
+  const active = ["requesting_permission","connecting","listening","speaking","interrupted","reconnecting"].includes(state);
+  document.body.classList.toggle("voice-active", active);
+  elements.voiceOrb?.style.setProperty("--voice-level", active ? elements.voiceOrb.style.getPropertyValue("--voice-level") || "0" : "0");
+  updateVoiceControls();
+}
+
+function updateVoiceControls() {
+  const state = voiceClient?.state || "idle";
+  const active = ["requesting_permission","connecting","listening","speaking","interrupted","reconnecting"].includes(state);
+  const busy = ["connecting","requesting_permission","reconnecting"].includes(state);
+  const muted = Boolean(voiceClient?.muted);
+  elements.voiceStartButton.disabled = Boolean(active);
+  elements.voiceMuteButton.disabled = !active || busy;
+  elements.voiceStopButton.disabled = !active && state !== "closing";
+  elements.voiceRetryButton.hidden = !["error","closed"].includes(state);
+  elements.voiceCaptionsToggle.disabled = active;
+  elements.voiceMuteButton.textContent = muted ? "Unmute" : "Mute";
+  elements.voiceMuteButton.setAttribute("aria-pressed", String(muted));
+  if (state === "closed" || state === "idle") {
+    elements.voiceCaptions.hidden = !Boolean(elements.voiceCaptionsToggle?.checked);
+    elements.voiceCaptionYou.textContent = "";
+    elements.voiceCaptionJuni.textContent = "";
+    if (state === "closed") hideVoiceToolOffer();
+  }
+}
+
+function showVoiceToolOffer(url, label) {
+  voiceToolUrl = url || null;
+  if (!voiceToolUrl) return;
+  elements.voiceToolUrl.href = voiceToolUrl;
+  elements.voiceToolUrl.textContent = label ? label + " · " + voiceToolUrl : voiceToolUrl;
+  elements.voiceToolOffer.classList.add("show");
+}
+
+function hideVoiceToolOffer() {
+  voiceToolUrl = null;
+  elements.voiceToolOffer.classList.remove("show");
+  elements.voiceToolUrl.href = "#";
+}
+
+function showVoiceError(error) {
+  elements.voiceError.textContent = error?.message || "Voice interaction could not continue.";
+  elements.voiceError.hidden = false;
+  updateVoiceControls();
+}
+
+function clearVoiceError() {
+  elements.voiceError.hidden = true;
+  elements.voiceError.textContent = "";
+}
+
+function normalizeClientError(error) {
+  const messages = {
+    VOICE_FEATURE_DISABLED: "Real-time voice is disabled on this deployment.",
+    VOICE_AUTH_REQUIRED: "Enter the JUNI-AI access code before starting voice.",
+    VOICE_TOKEN_FAILED: "Voice authentication could not be established.",
+    VOICE_PERMISSION_DENIED: "Microphone permission was denied. Allow microphone access and try again.",
+    VOICE_MIC_UNAVAILABLE: "No usable microphone is available.",
+    VOICE_CONNECTION_FAILED: "Gemini Live could not be reached.",
+    VOICE_CONNECTION_CLOSED: "The voice connection closed.",
+    VOICE_RECONNECT_FAILED: "Voice reconnect attempts were exhausted. Retry to start a new connection.",
+    VOICE_PROTOCOL_ERROR: "The voice service returned an unsupported message.",
+    VOICE_AUDIO_ERROR: "The browser audio pipeline failed.",
+    VOICE_MODEL_UNSUPPORTED: "The configured Gemini Live model is not supported for realtime voice.",
+  };
+  return { message: messages[error?.code] || "Voice interaction could not continue." };
+}
+
 
 function createChat() {
   const chat = {

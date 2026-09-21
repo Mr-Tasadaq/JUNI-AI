@@ -10,6 +10,6 @@ export function createProviderRegistry(config) {
     anthropic: createAnthropicProvider(config, { identity }),
     openai: createOpenAIProvider(config, { identity }),
     gemini: createGeminiProvider(config, { identity }),
-    geminiLive: createGeminiLiveProvider(config),
+    geminiLive: createGeminiLiveProvider(config, { identity }),
   };
 }

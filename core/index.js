@@ -7,7 +7,15 @@ export { JUNI_IDENTITY, buildSystemIdentity } from "./identity.js";
 export { ProviderError, RouterError, JuniError } from "./errors.js";
 export { authorizeRequest, checkOrigin, redactSecrets, sanitizeEventData, safeTokenEquals } from "./security.js";
 export { createProvenanceRecord, AI_BLOCKCHAIN_BOUNDARY } from "./provenance.js";
-export { assertVoiceSessionContract, VoiceSessionController, VOICE_EVENTS } from "./voice.js";
+export {
+  assertVoiceSessionContract,
+  VoiceSessionController,
+  VOICE_EVENTS,
+  VOICE_STATES,
+  assertVoiceState,
+  canTransitionVoiceState,
+  assertVoiceTransition,
+} from "./voice.js";
 export { createJuniMemoryApplication } from "../memory/app.js";
 
 export { createJuniResearchApplication } from "../research/app.js";
