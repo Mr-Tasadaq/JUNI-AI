@@ -86,6 +86,12 @@ elements.menuButton.addEventListener("click", () => {
   document.body.classList.toggle("sidebar-open");
 });
 
+function activeConversationId(history) {
+  const chat = getActiveChat();
+  if (chat?.id) return chat.id;
+  return Array.isArray(history) ? history.conversationId : undefined;
+}
+
 function createChat() {
   const chat = {
     id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
@@ -277,6 +283,7 @@ async function requestAssistant(text, history, researchEnabled = false, allowAut
     : {
         message: text,
         messages: history,
+        conversationId: activeConversationId(history),
       };
 
   try {
