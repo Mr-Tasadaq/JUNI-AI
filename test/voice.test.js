@@ -56,6 +56,7 @@ function fakeConfig(overrides = {}) {
     routing: { availabilityWeight: 10, capabilityWeight: 8, priorityWeight: 3 },
     observability: { maxEventPayloadBytes: 8192 },
     retention: { researchDays: 30 },
+    research: { allowIdentityHeaders: false, fixedTenantId: "tenant-test", fixedUserId: "user-test" },
     ...overrides,
   };
 }
@@ -302,10 +303,10 @@ test("voice tools allow only safe openWebsite/getCurrentTime and reject arbitrar
   assert.equal(time.status, "ok");
   const opened = await executeVoiceTool("openWebsite", { url: "https://example.com" });
   assert.equal(opened.requiresUserClick, true);
-  assert.throws(() => executeVoiceTool("openWebsite", { url: "javascript:alert(1)" }), (error) => error.code === "VOICE_TOOL_REJECTED");
-  assert.throws(() => executeVoiceTool("openWebsite", { url: "https://user:pass@example.com" }), (error) => error.code === "VOICE_TOOL_REJECTED");
-  assert.throws(() => executeVoiceTool("openWebsite", { url: "http://127.0.0.1" }), (error) => error.code === "VOICE_TOOL_REJECTED");
-  assert.throws(() => executeVoiceTool("openWebsite", { url: "https://example.com:8443" }), (error) => error.code === "VOICE_TOOL_REJECTED");
+  await assert.rejects(() => executeVoiceTool("openWebsite", { url: "javascript:alert(1)" }), (error) => error.code === "VOICE_TOOL_REJECTED");
+  await assert.rejects(() => executeVoiceTool("openWebsite", { url: "https://user:pass@example.com" }), (error) => error.code === "VOICE_TOOL_REJECTED");
+  await assert.rejects(() => executeVoiceTool("openWebsite", { url: "http://127.0.0.1" }), (error) => error.code === "VOICE_TOOL_REJECTED");
+  await assert.rejects(() => executeVoiceTool("openWebsite", { url: "https://example.com:8443" }), (error) => error.code === "VOICE_TOOL_REJECTED");
   await assert.rejects(() => executeVoiceTool("unknownTool", {}), (error) => error.code === "VOICE_TOOL_REJECTED");
 });
 
@@ -399,18 +400,20 @@ test("VoiceClient uses only ephemeral token in memory, sends AUDIO setup, handle
   };
 
   const stateEvents = [];
+  const clientErrors = [];
   const client = new VoiceClient({
     WebSocketImpl: FakeWebSocket,
     fetchImpl,
     audioInputFactory: (options) => new FakeAudioInput(options),
     audioOutputFactory: (options) => new FakeAudioOutput(options),
     onState: (event) => stateEvents.push(event),
+    onError: (error) => clientErrors.push(error),
   });
   cleanup.push(() => client.stop("test_cleanup"));
 
   await client.start();
-  await new Promise((resolve) => setTimeout(resolve, 5));
-  assert.equal(client.sessionId, "server-session-1");
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  assert.equal(client.sessionId, "server-session-1", JSON.stringify(clientErrors));
   assert.equal(client.state, "listening");
   assert.equal(sockets.length, 1);
   assert.ok(sockets[0].url.includes("access_token=ephemeral-only"));
@@ -433,8 +436,8 @@ test("VoiceClient uses only ephemeral token in memory, sends AUDIO setup, handle
   sockets[0].emit("message", {
     data: JSON.stringify({ serverContent: { interrupted: true } }),
   });
-  await new Promise((resolve) => setTimeout(resolve, 5));
-  assert.equal(client.state, "listening");
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  assert.equal(client.state, "listening", JSON.stringify(clientErrors));
   assert.ok(stateEvents.some((item) => item.state === "listening"));
   assert.ok(sessionPosts.some((item) => item.kind === "voice_interrupted"));
 });
