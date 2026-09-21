@@ -10,6 +10,7 @@ import {
   clearAuthCookie,
   serializeAuthCookie,
 } from "../core/security.js";
+import { resolveRequestIdentity } from "../core/identity.js";
 
 const policy = {
   providers: ["openai", "anthropic"],
@@ -88,4 +89,81 @@ test("event data redacts credentials", () => {
   assert.equal(sanitized.nested.token, "[REDACTED]");
   assert.equal(sanitized.nested.note, "safe");
   assert.equal(redactSecrets("api key sk-abcdefghijklmnop").includes("[REDACTED]"), true);
+});
+
+
+test("canonical request identity prefers authenticated identity over headers", () => {
+  const identity = resolveRequestIdentity(
+    {
+      user: {
+        tenantId: "tenant-auth",
+        userId: "user-auth",
+        sessionId: "session-1",
+        actorId: "actor-1",
+        authMethod: "jwt",
+      },
+      headers: {
+        "x-tenant-id": "tenant-attacker",
+        "x-user-id": "user-attacker",
+      },
+    },
+    {
+      fixedTenantId: "tenant-fixed",
+      fixedUserId: "user-fixed",
+      allowIdentityHeaders: true,
+    }
+  );
+
+  assert.deepEqual(identity, {
+    tenantId: "tenant-auth",
+    userId: "user-auth",
+    sessionId: "session-1",
+    actorId: "actor-1",
+    authMethod: "jwt",
+  });
+});
+
+test("canonical request identity uses explicit server-fixed scope when needed", () => {
+  assert.deepEqual(
+    resolveRequestIdentity(
+      { headers: {} },
+      { fixedTenantId: "tenant-fixed", fixedUserId: "user-fixed" }
+    ),
+    {
+      tenantId: "tenant-fixed",
+      userId: "user-fixed",
+      actorId: "user-fixed",
+      authMethod: "server-fixed",
+    }
+  );
+});
+
+test("canonical request identity fails closed without a trusted identity source", () => {
+  assert.throws(
+    () => resolveRequestIdentity({ headers: {} }, {}),
+    (error) => error.code === "REQUEST_IDENTITY_NOT_CONFIGURED"
+  );
+});
+
+test("identity headers require explicit opt-in", () => {
+  assert.throws(
+    () => resolveRequestIdentity(
+      { headers: { "x-tenant-id": "tenant-header", "x-user-id": "user-header" } },
+      {}
+    ),
+    (error) => error.code === "REQUEST_IDENTITY_NOT_CONFIGURED"
+  );
+
+  assert.deepEqual(
+    resolveRequestIdentity(
+      { headers: { "x-tenant-id": "tenant-header", "x-user-id": "user-header" } },
+      { allowIdentityHeaders: true }
+    ),
+    {
+      tenantId: "tenant-header",
+      userId: "user-header",
+      actorId: "user-header",
+      authMethod: "identity-header",
+    }
+  );
 });
