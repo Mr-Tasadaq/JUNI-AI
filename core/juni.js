@@ -161,6 +161,7 @@ export class JuniCore {
     const normalized = normalizeRequest(request, {
       model: this.#config.app.defaultModel,
     });
+    const started = Date.now();
     let messages = [...normalized.messages];
     const lastMessage = messages.at(-1);
     const currentMessagePresent = normalized.message
@@ -197,11 +198,22 @@ export class JuniCore {
       });
 
       for await (const event of stream) {
+        if (event?.type === "completed") {
+          this.#events?.emit("provider.completed", {
+            latencyMs: Date.now() - started,
+            usage: event.usage ?? null,
+          }, {
+            requestId,
+            provider: event.provider ?? null,
+            model: event.model ?? null,
+          });
+        }
         yield { ...event, requestId };
       }
 
       this.#events?.emit("request.completed", {
         streamed: true,
+        latencyMs: Date.now() - started,
       }, { requestId });
     } catch (error) {
       this.#events?.emit("request.failed", {
