@@ -140,13 +140,15 @@ export function loadConfig(env = process.env) {
     voice: {
       enabled: boolOrDefault(env.JUNI_FEATURE_VOICE, false),
       tokenTtlSeconds: clampVoiceSeconds(env.JUNI_VOICE_TOKEN_TTL_SECONDS, 1_800, 60, 71_999),
-      newSessionTtlSeconds: clampVoiceSeconds(env.JUNI_VOICE_NEW_SESSION_TTL_SECONDS, 60, 10, 3_600),
+      newSessionTtlSeconds: clampVoiceSeconds(env.JUNI_VOICE_NEW_SESSION_TTL_SECONDS, 60, 10, 1_800),
       maxSessionMinutes: clampVoiceSeconds(env.JUNI_VOICE_MAX_SESSION_MINUTES, 30, 1, 120),
       captionsEnabled: boolOrDefault(env.JUNI_VOICE_CAPTIONS_ENABLED, false),
       audioChunkMs: clampVoiceSeconds(env.JUNI_VOICE_AUDIO_CHUNK_MS, 60, 20, 100),
       outputBufferLimitMs: clampVoiceSeconds(env.JUNI_VOICE_OUTPUT_BUFFER_LIMIT_MS, 1_200, 100, 5_000),
       maxReconnectAttempts: clampVoiceSeconds(env.JUNI_VOICE_MAX_RECONNECT_ATTEMPTS, 5, 0, 10),
       reconnectBaseMs: clampVoiceSeconds(env.JUNI_VOICE_RECONNECT_BASE_MS, 500, 100, 5_000),
+      fixedTenantId: stringOrUndefined(env.JUNI_VOICE_DEFAULT_TENANT_ID),
+      fixedUserId: stringOrUndefined(env.JUNI_VOICE_DEFAULT_USER_ID),
       liveApiVersion: "v1beta",
     },
   });
