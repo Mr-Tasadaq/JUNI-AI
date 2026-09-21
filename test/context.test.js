@@ -86,5 +86,5 @@ test("conversation context retention metadata can expire old turns", async (t) =
   assert.equal(recent.length, 1);
 
   const cleanup = await app.retention.expired(scope);
-  assert.ok(cleanup.some((item) => item.record_type === "conversation"));
+  assert.ok(cleanup.some((item) => item.record_type === "context"));
 });
