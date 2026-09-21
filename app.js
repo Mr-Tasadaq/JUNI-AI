@@ -885,11 +885,13 @@ async function refreshServiceStatus() {
     elements.statusPill?.classList.toggle("offline", !healthy && !degraded);
 
     if (!healthy && response.status !== 401) {
-      elements.statusPill?.title = data?.checks?.providers?.length
-        ? "One or more backend checks need attention."
-        : "The JUNI-AI service is not currently ready.";
-    } else {
-      elements.statusPill?.title = "";
+      if (elements.statusPill) {
+        elements.statusPill.title = data?.checks?.providers?.length
+          ? "One or more backend checks need attention."
+          : "The JUNI-AI service is not currently ready.";
+      }
+    } else if (elements.statusPill) {
+      elements.statusPill.title = "";
     }
   } catch {
     elements.statusText.textContent = "Offline";
