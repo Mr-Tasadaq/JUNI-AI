@@ -22,7 +22,7 @@ export class ResearchOrchestrator {
     const session=await this.#storage.startSession(scope,{...request,sessionId:input.sessionId,retentionExpiresAt:new Date(Date.now()+this.#config.retention.researchDays*86_400_000).toISOString()});
     const started=Date.now();
     this.#events?.emit("research.started",{sessionId:session.id,mode:request.mode,query:request.query},{requestId:request.requestId});
-    const warnings=[];const errors=[];const allSources=[];const native=[];const searchQueriesIssued=[];let totalRetrievedBytes=0;
+    const warnings=[];const errors=[];const allSources=[];const native=[];const searchQueriesIssued=[];const retrievalBudget={bytes:0};
     const seenUrls=new Map(); let searchCalls=0; let retrievalCount=0; let cacheHits=0;
     try {
       if(request.urls.length){
@@ -43,7 +43,7 @@ export class ResearchOrchestrator {
             await this.#storage.addOperation(scope,{sessionId:session.id,operationType:"url_context",status:"failed",url:request.urls.join(","),provider:request.provider??null,model:request.model??null,errorCode:error.code??"RESEARCH_CAPABILITY_UNAVAILABLE",metadata:{message:error.message}});
           }
         }
-        const result=await this.#retrieveUserUrls(scope,session.id,request,seenUrls);
+        const result=await this.#retrieveUserUrls(scope,session.id,request,seenUrls,retrievalBudget);
         allSources.push(...result.sources);retrievalCount+=result.retrievalCount;cacheHits+=result.cacheHits;
       }
       if(!request.urls.length || ["RESEARCH","DEEP_RESEARCH","SOURCE_COMPARISON","KNOWLEDGE_ACQUISITION"].includes(request.mode)){
@@ -67,15 +67,11 @@ export class ResearchOrchestrator {
               const source=normalizeSearchSource(raw,{provider:result.provider,tool:"web.search",sessionId:session.id});
               if(!source||seenUrls.has(source.canonicalUrl)) continue;
               try{
-                const estimatedBytes=Buffer.byteLength(String(source.content??""),"utf8");
-                if(totalRetrievedBytes+estimatedBytes>request.maxRetrievedBytes) break;
-                const retrieved=await this.#retrieveSource(scope,session.id,request,source);
+                const retrieved=await this.#retrieveSource(scope,session.id,request,source,retrievalBudget);
                 if(!retrieved) continue;
                 const near=allSources.find((candidate)=>nearDuplicateSimilarity(candidate.content,retrieved.content)>=0.9);
                 if(near){seenUrls.set(retrieved.canonicalUrl,near.id);continue;}
-                const fetchedBytes=Buffer.byteLength(String(retrieved.content??""),"utf8");
-                if(totalRetrievedBytes+fetchedBytes>request.maxRetrievedBytes) break;
-                allSources.push(retrieved);seenUrls.set(retrieved.canonicalUrl,retrieved.id);retrievalCount+=1;totalRetrievedBytes+=fetchedBytes;
+                allSources.push(retrieved);seenUrls.set(retrieved.canonicalUrl,retrieved.id);retrievalCount+=1;
               }catch(error){errors.push({operation:"retrieve",url:source.url,code:error.code??"RETRIEVAL_FAILED"});}
               if(allSources.length>=request.maxSources) break;
             }
@@ -123,7 +119,7 @@ sources:storedSources,claims:synthesis.claims,evidence,citations:await this.#sto
         candidate=await this.#knowledge.createCandidate(scope,{sessionId:session.id,proposedTitle:input.candidateTitle??"Research knowledge candidate",proposedKnowledge:{answer:synthesis.answer,claims:synthesis.claims,sourceIds:storedSources.map((x)=>x.id),evidenceIds:evidence.map((x)=>x.id)},sourceIds:storedSources.map((x)=>x.id),evidenceIds:evidence.map((x)=>x.id),confidence:synthesis.confidence,rationale:"Candidate derived from preserved research evidence.",provider:synthesis.provider,model:synthesis.model,tool:"research"});
         result.knowledgeCandidateId=candidate.id;
       }
-      await this.#storage.appendEvent(scope,{eventType:"research_completed",actorType:"system",actorId:null,objectId:session.id,objectVersion:1,payload:{sourceCount:storedSources.length,searchCalls,urlRetrievalCount:retrievalCount,cacheHits,totalRetrievedBytes,provider:synthesis.provider,model:synthesis.model}});
+      await this.#storage.appendEvent(scope,{eventType:"research_completed",actorType:"system",actorId:null,objectId:session.id,objectVersion:1,payload:{sourceCount:storedSources.length,searchCalls,urlRetrievalCount:retrievalCount,cacheHits,totalRetrievedBytes:retrievalBudget.bytes,provider:synthesis.provider,model:synthesis.model}});
       await this.#storage.updateSession(scope,session.id,{status:"completed",completedAt:new Date().toISOString(),selectedProvider:synthesis.provider,selectedModel:synthesis.model,answer:synthesis.answer,result,warnings:result.warnings,errors,tools:["web.search","url.retrieve"],providers:[...new Set([synthesis.provider,...storedSources.map((s)=>s.provider).filter(Boolean)])],models:[synthesis.model].filter(Boolean)});
       this.#events?.emit("research.completed",{sessionId:session.id,sourceCount:storedSources.length,cacheHits},{requestId:request.requestId,provider:synthesis.provider,model:synthesis.model});
       return result;
@@ -138,20 +134,20 @@ sources:storedSources,claims:synthesis.claims,evidence,citations:await this.#sto
 
   async retrieveUrl(scope,url,options={}){assertScope(scope);return this.#retriever.retrieve(url,options);}
 
-  async #retrieveUserUrls(scope,sessionId,request,seenUrls){
+  async #retrieveUserUrls(scope,sessionId,request,seenUrls,retrievalBudget){
     const sources=[];let retrievalCount=0;let cacheHits=0;
     for(const url of request.urls.slice(0,request.maxSources)){
       try{
         const normalized=normalizeSearchSource({url},{sessionId});
         if(!normalized||seenUrls.has(normalized.canonicalUrl)) continue;
-        const retrieved=await this.#retrieveSource(scope,sessionId,request,normalized);
+        const retrieved=await this.#retrieveSource(scope,sessionId,request,normalized,retrievalBudget);
         if(retrieved){sources.push(retrieved);seenUrls.set(retrieved.canonicalUrl,retrieved.id);retrievalCount+=1;}
       }catch(error){await this.#storage.addOperation(scope,{sessionId,operationType:"retrieve",status:"failed",url,attempts:1,errorCode:error.code??"RETRIEVAL_FAILED",metadata:{message:error.message}});}
     }
     return {sources,retrievalCount,cacheHits};
   }
 
-  async #retrieveSource(scope,sessionId,request,source){
+  async #retrieveSource(scope,sessionId,request,source,retrievalBudget=null){
     const cacheKey=ResearchCache.key("url",source.canonicalUrl);
     const cached=await this.#cache.get(scope,cacheKey);
     if(cached.hit){
@@ -163,6 +159,11 @@ sources:storedSources,claims:synthesis.claims,evidence,citations:await this.#sto
     const started=Date.now();
     try{
       const fetched=await this.#retriever.retrieve(source.url,{allowedDomains:request.domains,blockedDomains:request.excludedDomains,maxBytes:request.maxSourceBytes,maxRedirects:request.maxRedirects,signal:request.signal});
+      const fetchedBytes=Buffer.byteLength(String(fetched.content??""),"utf8");
+      if(retrievalBudget && retrievalBudget.bytes+fetchedBytes>request.maxRetrievedBytes) {
+        throw codeError("RESEARCH_RETRIEVED_BUDGET_EXCEEDED","Research retrieval byte budget exceeded.");
+      }
+      if(retrievalBudget) retrievalBudget.bytes+=fetchedBytes;
       const normalized=normalizeSearchSource({...source,...fetched,title:fetched.metadata.title??source.title,publisher:fetched.metadata.publisher??source.publisher,author:fetched.metadata.author??source.author,publicationDate:fetched.metadata.publicationDate??source.publicationDate,language:fetched.metadata.language??source.language,contentType:fetched.contentType,content:fetched.content,contentHash:fetched.contentHash,metadataHash:fetched.metadataHash},{provider:source.provider,tool:"web.retrieve",sessionId});
       await this.#storage.addOperation(scope,{sessionId,operationType:"retrieve",status:"completed",url:source.url,provider:source.provider,tool:"web.retrieve",startedAt:new Date(started).toISOString(),completedAt:new Date().toISOString(),usage:{bytes:fetched.rawBytes},metadata:{redirectChain:fetched.redirectChain,promptInjectionIndicators:fetched.metadata.promptInjectionIndicators}});
       await this.#cache.set(scope,cacheKey,{...normalized,content:fetched.content,contentHash:fetched.contentHash},{sourceRef:source.url});
