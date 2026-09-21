@@ -50,7 +50,7 @@ export function createGeminiLiveProvider(config, { identity = buildSystemIdentit
       if (!forceRefresh && cached && cached.expiresAt > Date.now()) return cached.value;
 
       const { GoogleGenAI } = await asyncLoadGeminiLive();
-      client ??= new GoogleGenAI({ apiKey: providerConfig.apiKey, httpOptions: { apiVersion: "v1beta" } });
+      client ??= new GoogleGenAI({ apiKey: providerConfig.apiKey, httpOptions: { apiVersion: config.voice.liveApiVersion } });
       let info;
       try {
         info = await client.models.get({ model });
@@ -61,14 +61,19 @@ export function createGeminiLiveProvider(config, { identity = buildSystemIdentit
       }
       const resourceName = String(info?.name ?? "").replace(/^models\//, "");
       const supportedActions = Array.isArray(info?.supportedActions) ? info.supportedActions.map(String) : [];
+      const supportedGenerationMethods = Array.isArray(info?.supportedGenerationMethods)
+        ? info.supportedGenerationMethods.map(String)
+        : [];
       const hasLiveSignal = /(^|[-_.])live($|[-_.])/i.test(resourceName || model)
-        || supportedActions.some((action) => /bidi.*generate|live/i.test(action));
+        || supportedActions.some((action) => /bidi.*generate|live/i.test(action))
+        || supportedGenerationMethods.some((method) => /bidi.*generate|live/i.test(method));
       if (!hasLiveSignal) throw voiceError("VOICE_MODEL_UNSUPPORTED", "Configured Gemini model is not advertised as a Live model.");
 
       const value = Object.freeze({
         model,
         resourceName: resourceName || model,
         supportedActions,
+        supportedGenerationMethods,
         liveValidatedAt: new Date().toISOString(),
       });
       validatedCache.set(model, { value, expiresAt: Date.now() + 300_000 });
@@ -79,7 +84,7 @@ export function createGeminiLiveProvider(config, { identity = buildSystemIdentit
       requireGeminiProvider(config);
       const validation = await provider.validateLiveModel({ model });
       const { GoogleGenAI } = await asyncLoadGeminiLive();
-      client ??= new GoogleGenAI({ apiKey: providerConfig.apiKey });
+      client ??= new GoogleGenAI({ apiKey: providerConfig.apiKey, httpOptions: { apiVersion: config.voice.liveApiVersion } });
       const now = Date.now();
       const expireTime = new Date(now + config.voice.tokenTtlSeconds * 1000).toISOString();
       const newSessionExpireTime = new Date(now + config.voice.newSessionTtlSeconds * 1000).toISOString();
