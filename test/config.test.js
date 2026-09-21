@@ -22,6 +22,9 @@ test("loads provider-neutral configuration without secrets", () => {
   assert.deepEqual(config.app.fallbackProviders, ["anthropic", "openai"]);
   assert.equal(config.storage.quotaBytes, 10_737_418_240);
   assert.equal(config.provenance.storageBudgetBytes, 10_737_418_240);
+  assert.equal(config.identity.fixedTenantId, undefined);
+  assert.equal(config.identity.fixedUserId, undefined);
+  assert.equal(config.identity.allowIdentityHeaders, false);
   assert.deepEqual(configuredProviderNames(config), []);
   assert.deepEqual(config.security.requestAllowlist.providers, ["anthropic", "openai", "gemini"]);
   assert.deepEqual(config.security.requestAllowlist.modelsByProvider.openai, ["gpt-test"]);
@@ -54,4 +57,17 @@ test("placeholder credentials are not interpreted as configured keys", () => {
   });
 
   assert.deepEqual(configuredProviderNames(config), []);
+});
+
+
+test("loads explicit canonical request identity scope", () => {
+  const config = loadConfig({
+    JUNI_IDENTITY_DEFAULT_TENANT_ID: "tenant-test",
+    JUNI_IDENTITY_DEFAULT_USER_ID: "user-test",
+    JUNI_IDENTITY_ALLOW_HEADERS: "true",
+  });
+
+  assert.equal(config.identity.fixedTenantId, "tenant-test");
+  assert.equal(config.identity.fixedUserId, "user-test");
+  assert.equal(config.identity.allowIdentityHeaders, true);
 });
