@@ -48,6 +48,7 @@ export class ResearchOrchestrator {
       }
       if(!request.urls.length || ["RESEARCH","DEEP_RESEARCH","SOURCE_COMPARISON","KNOWLEDGE_ACQUISITION"].includes(request.mode)){
         for(const query of searchQueriesForRequest(request)){
+          searchCalls += 1;
           try{
             const cacheKey=ResearchCache.key("search",{query,domains:request.domains,excluded:request.excludedDomains,mode:request.mode});
             const cached=await this.#cache.get(scope,cacheKey);
@@ -55,7 +56,6 @@ export class ResearchOrchestrator {
             if(cached.hit){cacheHits+=1;result=cached.value;}
             else{
               result=await this.#router.research({query,requestId:request.requestId,model:request.model,provider:request.provider,allowedDomains:request.domains,blockedDomains:request.excludedDomains,maxSearchQueries:1,operation:"search",signal:input.signal},{operation:"search"});
-              searchCalls+=1;
               await this.#cache.set(scope,cacheKey,result,{sourceRef:"search:"+query});
             }
             if(result?.searchQueries?.length) searchQueriesIssued.push(...result.searchQueries);
@@ -76,7 +76,6 @@ export class ResearchOrchestrator {
               if(allSources.length>=request.maxSources) break;
             }
           }catch(error){
-            searchCalls+=1;
             errors.push({operation:"search",query,code:error.code??"RESEARCH_SEARCH_FAILED"});
           }
           if(allSources.length>=request.maxSources) break;
