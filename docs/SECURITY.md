@@ -77,3 +77,12 @@ Deletion of memory is represented by a tombstone rather than a destructive SQL d
 The provenance ledger is append-oriented and cryptographically chained. It is tamper-evident, not distributed consensus and not mathematically immutable.
 
 The HTTP API does not expose raw memory by arbitrary tenant/user headers because Step 1 does not yet provide a real user identity/session authority. The programmatic inspection service is the current boundary until authenticated identity is added.
+
+
+## Step 3 web-research security
+
+Retrieved pages are UNTRUSTED DATA. The research layer explicitly instructs synthesis models not to follow instructions embedded in web content. It blocks URL credentials, non-HTTP schemes, localhost, private/non-public IP targets, unsafe DNS resolutions, non-standard ports, and redirects to blocked/private destinations. Response sizes and redirect counts are bounded, and downloaded HTML scripts/styles are never executed.
+
+The research HTTP endpoint does not trust arbitrary tenant/user headers by default. It uses authenticated request identity when available or a server-configured fixed scope. Provider API keys remain server-side.
+
+Provider-native citations are preserved only when they can be mapped to a retrieved source. Application citations are accepted only when the cited source and evidence IDs exist. Conflicting evidence is retained as supports/contradicts/qualifies relationships rather than silently merged.
