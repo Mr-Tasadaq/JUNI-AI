@@ -1,6 +1,49 @@
 const INPUT_RATE = 16000;
 const DEFAULT_CHUNK_MS = 40;
 
+export function resampleFloat32ToPcm16(input, inputRate, targetRate = 16000) {
+  if (!(input instanceof Float32Array) || !input.length) return new Int16Array(0);
+  if (!Number.isFinite(inputRate) || inputRate <= 0 || !Number.isFinite(targetRate) || targetRate <= 0) {
+    throw voiceError("VOICE_AUDIO_ERROR", "Invalid audio sample rate.");
+  }
+  if (inputRate === targetRate) return float32ToPcm16(input);
+  const outputLength = Math.max(1, Math.floor(input.length * targetRate / inputRate));
+  const output = new Int16Array(outputLength);
+  const step = inputRate / targetRate;
+  for (let i = 0; i < outputLength; i += 1) {
+    const position = Math.min(input.length - 1, i * step);
+    const left = Math.floor(position);
+    const right = Math.min(input.length - 1, left + 1);
+    const fraction = position - left;
+    const sample = input[left] + (input[right] - input[left]) * fraction;
+    output[i] = clampPcm16(sample);
+  }
+  return output;
+}
+
+export function chunkPcm16(pcm, chunkSamples) {
+  if (!(pcm instanceof Int16Array) || !Number.isInteger(chunkSamples) || chunkSamples <= 0) {
+    throw voiceError("VOICE_AUDIO_ERROR", "Invalid PCM chunk configuration.");
+  }
+  const chunks = [];
+  for (let offset = 0; offset < pcm.length; offset += chunkSamples) {
+    const end = Math.min(pcm.length, offset + chunkSamples);
+    chunks.push(pcm.slice(offset, end));
+  }
+  return chunks;
+}
+
+function float32ToPcm16(input) {
+  const output = new Int16Array(input.length);
+  for (let i = 0; i < input.length; i += 1) output[i] = clampPcm16(input[i]);
+  return output;
+}
+
+function clampPcm16(value) {
+  const sample = Math.max(-1, Math.min(1, Number(value) || 0));
+  return sample < 0 ? Math.round(sample * 32768) : Math.round(sample * 32767);
+}
+
 export class AudioInput {
   #context;
   #stream;
@@ -94,17 +137,7 @@ export class AudioInput {
     const node = this.#context.createScriptProcessor(1024, 1, 1);
     node.onaudioprocess = (event) => {
       const input = event.inputBuffer.getChannelData(0);
-      const step = this.#context.sampleRate / INPUT_RATE;
-      const output = new Int16Array(Math.max(1, Math.floor(input.length / step)));
-      for (let i = 0; i < output.length; i += 1) {
-        const position = Math.min(input.length - 1, i * step);
-        const left = Math.floor(position);
-        const right = Math.min(input.length - 1, left + 1);
-        const fraction = position - left;
-        const sample = input[left] + (input[right] - input[left]) * fraction;
-        const clamped = Math.max(-1, Math.min(1, sample));
-        output[i] = clamped < 0 ? Math.round(clamped * 32768) : Math.round(clamped * 32767);
-      }
+      const output = resampleFloat32ToPcm16(input, this.#context.sampleRate, INPUT_RATE);
       this.#onChunk(output.buffer);
     };
     return node;
