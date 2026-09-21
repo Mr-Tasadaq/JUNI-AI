@@ -9,7 +9,7 @@ import { createJuniResearchApplication } from "../research/app.js";
 import { normalizeResearchRequest, inferResearchMode } from "../research/model.js";
 import { canonicalizeUrl, nearDuplicateSimilarity, normalizeSearchSource } from "../research/normalizer.js";
 import { validateCitations, nativeCitationToModel } from "../research/citations.js";
-import { SafeWebRetriever } from "../research/url-fetcher.js";
+import { SafeWebRetriever, resolvePublicAddress } from "../research/url-fetcher.js";
 import { validateExternalUrl, promptInjectionIndicators } from "../research/security.js";
 
 const apps=[];
@@ -100,6 +100,26 @@ test("safe retrieval blocks unsafe URL, credentials, localhost, private DNS, and
   await assert.rejects(()=>validateExternalUrl("https://internal.example",{lookup:async()=>[{address:"10.1.2.3",family:4}]}),e=>e.code==="SSRF_BLOCKED");
   const retriever=new SafeWebRetriever({config:config().research,fetchImpl:async()=>htmlResponse("",302,{"location":"http://127.0.0.1/admin"}),lookup:publicLookup()});
   await assert.rejects(()=>retriever.retrieve("https://example.com/redirect"),e=>e.code==="SSRF_BLOCKED");
+});
+
+test("production retrieval pins a safe resolved IP before transport",async()=>{
+  let observed=null;
+  const retriever=new SafeWebRetriever({
+    config:config().research,
+    lookup:async()=>[{address:"93.184.216.34",family:4}],
+    requestImpl:async(target,options)=>{
+      observed={target:String(target),options};
+      return htmlResponse("<p>pinned response</p>");
+    },
+  });
+  const result=await retriever.retrieve("https://example.com/pinned");
+  assert.match(result.content,/pinned response/);
+  assert.equal(observed.options.pinnedAddress,"93.184.216.34");
+  assert.equal(await resolvePublicAddress("example.com",async()=>[{address:"93.184.216.34",family:4}]),"93.184.216.34");
+  await assert.rejects(
+    () => resolvePublicAddress("internal.example",async()=>[{address:"10.0.0.8",family:4}]),
+    error => error.code === "SSRF_BLOCKED"
+  );
 });
 
 test("retrieval strips executable markup and records prompt-injection indicators",async()=>{
