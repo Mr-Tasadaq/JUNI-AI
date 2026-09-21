@@ -373,6 +373,21 @@ test("voice token route enforces feature/auth/identity without trusting browser 
   assert.equal(disabled.statusCode, 503);
   assert.equal(disabled.body.code, "VOICE_FEATURE_DISABLED");
 
+  const valid = fakeResponse();
+  const secureApp = makeApp();
+  secureApp.config.voice.fixedTenantId = "tenant-a";
+  secureApp.config.voice.fixedUserId = "user-a";
+  await handleVoiceToken(
+    { method: "POST", headers: { origin: "https://example.com", authorization: "Bearer test-access" }, body: { captions: true } },
+    valid,
+    secureApp,
+  );
+  assert.equal(valid.statusCode, 200);
+  assert.equal(valid.body.model, "gemini-3.8-live");
+  assert.equal(valid.body.token, "auth_tokens/test");
+  assert.equal(valid.body.newSessionExpiresAt !== undefined, true);
+  assert.equal(JSON.stringify(valid.body).includes("server-only-gemini-key"), false);
+
   const noIdentity = fakeResponse();
   await handleVoiceToken(
     { method: "POST", headers: { origin: "https://example.com", authorization: "Bearer test-access", "x-tenant-id": "attacker", "x-user-id": "attacker" }, body: {} },
@@ -382,8 +397,6 @@ test("voice token route enforces feature/auth/identity without trusting browser 
   assert.equal(noIdentity.statusCode, 503);
   assert.equal(noIdentity.body.code, "VOICE_IDENTITY_NOT_CONFIGURED");
 
-  const secureApp = makeApp();
-  secureApp.config.voice.fixedTenantId = "not-possible";
 });
  
 test("voice browser source contains no Gemini API key access and remains audio-only by design", async () => {
