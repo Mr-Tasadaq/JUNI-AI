@@ -110,6 +110,7 @@ export function loadConfig(env = process.env) {
         tools: boolOrDefault(env.JUNI_FEATURE_TOOLS, true),
         webResearch: boolOrDefault(env.JUNI_FEATURE_WEB_RESEARCH, false),
         voice: boolOrDefault(env.JUNI_FEATURE_VOICE, false),
+        answerFirst: boolOrDefault(env.JUNI_FEATURE_ANSWER_FIRST, true),
       }),
       defaultProvider: stringOrUndefined(env.JUNI_DEFAULT_PROVIDER) ?? "openai",
       defaultModel: stringOrUndefined(env.JUNI_DEFAULT_MODEL),
@@ -119,6 +120,10 @@ export function loadConfig(env = process.env) {
       maxProviderRetries: intOrDefault(env.JUNI_MAX_PROVIDER_RETRIES, 1, 0),
       retryBaseDelayMs: intOrDefault(env.JUNI_PROVIDER_RETRY_DELAY_MS, 250, 0),
       modelOverrides: Object.freeze(parseJsonObject(env.JUNI_MODEL_CAPABILITIES_JSON)),
+      answerFirst: Object.freeze({
+        semanticThreshold: Math.min(0.95, Math.max(0.8, Number(env.JUNI_ANSWER_FIRST_SEMANTIC_THRESHOLD ?? 0.92) || 0.92)),
+        candidateTtlSeconds: intOrDefault(env.JUNI_ANSWER_FIRST_CANDIDATE_TTL_SECONDS, 2_592_000, 60),
+      }),
     },
     storage: {
       enabled: boolOrDefault(env.JUNI_STORAGE_ENABLED, true),
