@@ -217,7 +217,7 @@ export default async function handler(req, res) {
     provider: selection.provider,
     model: selection.model,
     task: typeof body.task === "string" ? body.task : "chat",
-    modality: typeof body.modality === "string" ? body.modality : "text",
+    modality: attachments.length ? "vision" : (typeof body.modality === "string" ? body.modality : "text"),
     latency: typeof body.latency === "string" ? body.latency : "balanced",
     stream: Boolean(body.stream),
     messages: Array.isArray(body.messages) ? body.messages : [],
