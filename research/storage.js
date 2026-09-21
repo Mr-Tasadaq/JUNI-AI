@@ -44,7 +44,18 @@ export class ResearchStorage {
       models:changes.models??fromJson(current.models_json,[]), retentionExpiresAt:changes.retentionExpiresAt??current.retention_expires_at,
     };
     const now=new Date().toISOString();
-    const nextSize=byteSize(record);
+    const nextSize=byteSize({
+      id,
+      tenantId: scope.tenantId,
+      userId: scope.userId,
+      query: current.query,
+      mode: current.mode,
+      requestedFreshness: current.requested_freshness,
+      outputFormat: current.output_format,
+      citationRequired: record.citationRequired ?? current.citationRequired,
+      allowKnowledgeCandidate: record.allowKnowledgeCandidate ?? current.allowKnowledgeCandidate,
+      ...record,
+    });
     const delta=nextSize-Number(current.size_bytes);
     await this.#quota.assertWithinQuota(scope,delta,{category:"other"});
     await this.#client.execute({
@@ -52,6 +63,11 @@ export class ResearchStorage {
       args:[record.status,record.completedAt,record.selectedProvider,record.selectedModel,record.answer,toJson(record.result),toJson(record.warnings),toJson(record.errors),toJson(record.tools),toJson(record.providers),toJson(record.models),record.retentionExpiresAt,now,nextSize,scope.tenantId,scope.userId,id],
     });
     return this.getSession(scope,id);
+  }
+
+  async appendEvent(scope,input){
+    assertScope(scope);
+    return this.#ledger.append(scope,input);
   }
 
   async getSession(scope,id){assertScope(scope);const r=await this.#client.execute({sql:"SELECT * FROM research_sessions WHERE tenant_id=? AND user_id=? AND id=?",args:[scope.tenantId,scope.userId,id]});return r.rows[0]?parseSession(r.rows[0]):null;}
