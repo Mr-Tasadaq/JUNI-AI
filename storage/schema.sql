@@ -349,6 +349,36 @@ CREATE INDEX IF NOT EXISTS idx_ledger_scope_sequence
   ON ledger_events (tenant_id, sequence);
 
 
+CREATE TABLE IF NOT EXISTS saved_answers (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  question_text TEXT NOT NULL,
+  normalized_question TEXT NOT NULL,
+  answer_text TEXT NOT NULL,
+  source_type TEXT NOT NULL,
+  source_ref TEXT,
+  provider TEXT,
+  model TEXT,
+  status TEXT NOT NULL,
+  needs_review INTEGER NOT NULL DEFAULT 1,
+  confidence REAL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  expires_at TEXT,
+  ttl_seconds INTEGER NOT NULL,
+  hit_count INTEGER NOT NULL DEFAULT 0,
+  approved_by TEXT,
+  approved_at TEXT,
+  checksum TEXT NOT NULL,
+  metadata_json TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_saved_answers_scope_question
+  ON saved_answers (tenant_id, user_id, normalized_question, status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_saved_answers_expiry
+  ON saved_answers (tenant_id, user_id, expires_at);
+
 CREATE TABLE IF NOT EXISTS rate_limit_buckets (
   bucket_key TEXT PRIMARY KEY,
   count INTEGER NOT NULL,
