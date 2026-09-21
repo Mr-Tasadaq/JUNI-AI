@@ -6,7 +6,7 @@
   "description": "JUNI-AI multi-provider AI agent foundation.",
   "scripts": {
     "test": "node --test",
-    "check": "node --check app.js && node --check api/chat.js",
+    "check": "node --check app.js && node --check api/chat.js && node --check api/voice-token.js && node --check api/voice-session.js && node --check core/voice.js && node --check providers/gemini-live.js && node --check voice/client.js",
     "dev": "npx serve ."
   },
   "engines": {
