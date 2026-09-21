@@ -65,10 +65,12 @@ export async function handleVoiceToken(req, res, current) {
       retentionExpiresAt: new Date(Date.now() + current.config.retention.logsDays * 86400000).toISOString(),
     });
 
+    const resumptionHandle = validateResumptionHandle(body.resumptionHandle);
     const token = await provider.createEphemeralToken({
       model: validation.resourceName,
       captionsEnabled: Boolean(body.captions) && current.config.voice.captionsEnabled,
       sessionId: session.id,
+      resumptionHandle,
     });
 
     current.events.emit("voice.session.started", {
@@ -136,4 +138,11 @@ function clientKey(req) {
 function isUuid(value) {
   return typeof value === "string"
     && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value);
+}
+
+
+function validateResumptionHandle(value) {
+  if (value == null || value === "") return null;
+  const handle = String(value);
+  return handle.length <= 4096 ? handle : null;
 }
