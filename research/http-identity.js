@@ -1,19 +1,19 @@
-import { assertScope } from "../memory/model.js";
+import { resolveRequestIdentity } from "../core/identity.js";
 
 export function resolveResearchScope(req, config) {
-  const authenticated = req?.auth?.user ?? req?.user ?? req?.auth ?? null;
-  const headerTenant = req?.headers?.["x-tenant-id"];
-  const headerUser = req?.headers?.["x-user-id"];
-  const tenantId = authenticated?.tenantId ?? authenticated?.tenant_id
-    ?? (config.research.allowIdentityHeaders ? headerTenant : null)
-    ?? config.research.fixedTenantId;
-  const userId = authenticated?.userId ?? authenticated?.user_id ?? authenticated?.id
-    ?? (config.research.allowIdentityHeaders ? headerUser : null)
-    ?? config.research.fixedUserId;
-  try { assertScope({tenantId,userId}); } catch {
-    const error=new Error("Authenticated research identity is not configured.");
-    error.code="RESEARCH_IDENTITY_NOT_CONFIGURED";
-    throw error;
+  try {
+    return resolveRequestIdentity(req, {
+      fixedTenantId: config.identity?.fixedTenantId ?? config.research.fixedTenantId,
+      fixedUserId: config.identity?.fixedUserId ?? config.research.fixedUserId,
+      allowIdentityHeaders: config.identity?.allowIdentityHeaders === true
+        || config.research.allowIdentityHeaders === true,
+    });
+  } catch (error) {
+    const normalized = new Error("Authenticated research identity is not configured.");
+    normalized.code = error?.code === "REQUEST_IDENTITY_NOT_CONFIGURED"
+      ? "RESEARCH_IDENTITY_NOT_CONFIGURED"
+      : error?.code ?? "RESEARCH_IDENTITY_INVALID";
+    normalized.cause = error;
+    throw normalized;
   }
-  return Object.freeze({tenantId:String(tenantId),userId:String(userId)});
 }
