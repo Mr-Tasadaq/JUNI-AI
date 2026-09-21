@@ -39,6 +39,8 @@ export class VoiceClient {
   #onError;
   #onVisibilityChange;
   #onPageHide;
+  #audioInputFactory;
+  #audioOutputFactory;
   #level = { input: 0, output: 0 };
 
   constructor({
@@ -50,6 +52,8 @@ export class VoiceClient {
     onEvent = () => {},
     onOpenWebsite = () => {},
     onError = () => {},
+    audioInputFactory = (options) => new AudioInput(options),
+    audioOutputFactory = (options) => new AudioOutput(options),
   } = {}) {
     this.#elements = elements;
     this.#fetch = fetchImpl;
@@ -59,6 +63,8 @@ export class VoiceClient {
     this.#onEvent = onEvent;
     this.#onOpenWebsite = onOpenWebsite;
     this.#onError = onError;
+    this.#audioInputFactory = audioInputFactory;
+    this.#audioOutputFactory = audioOutputFactory;
     this.#captionEnabled = Boolean(elements.captionsToggle?.checked);
     this.#onVisibilityChange = () => {
       if (!this.#machine || this.#closedByUser) return;
@@ -347,7 +353,7 @@ export class VoiceClient {
   }
 
   async #startAudio() {
-    this.#audioOutput ??= new AudioOutput({
+    this.#audioOutput ??= this.#audioOutputFactory({
       bufferLimitMs: this.#config.outputBufferLimitMs,
       onLevel: (level) => {
         this.#level.output = level;
@@ -356,7 +362,7 @@ export class VoiceClient {
     });
     await this.#audioOutput.start();
 
-    this.#audioInput ??= new AudioInput({
+    this.#audioInput ??= this.#audioInputFactory({
       chunkMs: this.#config.audioChunkMs,
       onChunk: (buffer) => this.#sendAudioBuffer(buffer),
       onLevel: (level) => {
