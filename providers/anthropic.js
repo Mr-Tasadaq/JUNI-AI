@@ -11,7 +11,16 @@ function toAnthropicContent(content) {
 
   return content.map((part) => {
     if (part.type === "text") return { type: "text", text: part.text };
-    if (part.type === "image") return part;
+    if (part.type === "image") {
+      return {
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: part.mimeType,
+          data: part.data,
+        },
+      };
+    }
     return part;
   });
 }
