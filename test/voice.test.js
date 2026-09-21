@@ -322,36 +322,70 @@ test("voice session metadata is scoped, auditable, and counts toward the existin
   assert.equal((await memory.inspection.verifyProvenance(scope)).valid, true);
 });
 
-test("voice endpoint rejects disabled feature and requires existing bearer auth without reading browser tenant headers", async () => {
-  const previous = {
-    feature: process.env.JUNI_FEATURE_VOICE,
-    token: process.env.JUNI_API_TOKEN,
-    tenant: process.env.JUNI_VOICE_DEFAULT_TENANT_ID,
-    user: process.env.JUNI_VOICE_DEFAULT_USER_ID,
-  };
-  process.env.JUNI_FEATURE_VOICE = "false";
-  process.env.JUNI_API_TOKEN = "test-access";
-  delete process.env.JUNI_VOICE_DEFAULT_TENANT_ID;
-  delete process.env.JUNI_VOICE_DEFAULT_USER_ID;
-  try {
-    const module = await import("../api/voice-token.js?disabled-test=" + randomUUID());
-    const res = fakeResponse();
-    await module.default({
-      method: "POST",
-      headers: { origin: "https://example.com", authorization: "Bearer test-access", "x-tenant-id": "attacker", "x-user-id": "attacker" },
-      body: {},
-    }, res);
-    assert.equal(res.statusCode, 503);
-    assert.equal(res.body.code, "VOICE_FEATURE_DISABLED");
-    assert.equal(res.body.token, undefined);
-  } finally {
-    restoreEnv("JUNI_FEATURE_VOICE", previous.feature);
-    restoreEnv("JUNI_API_TOKEN", previous.token);
-    restoreEnv("JUNI_VOICE_DEFAULT_TENANT_ID", previous.tenant);
-    restoreEnv("JUNI_VOICE_DEFAULT_USER_ID", previous.user);
-  }
-});
+test("voice token route enforces feature/auth/identity without trusting browser tenant headers", async () => {
+  const { handleVoiceToken } = await import("../voice/token-route.js");
+  const makeApp = (overrides = {}) => ({
+    config: {
+      voice: { enabled: true, captionsEnabled: false, maxSessionMinutes: 30, audioChunkMs: 60, outputBufferLimitMs: 1200, maxReconnectAttempts: 2, reconnectBaseMs: 500, ...overrides.voice },
+      security: { apiToken: "test-access", allowedOrigin: "https://example.com", ...overrides.security },
+      providers: { gemini: { liveModel: "gemini-3.8-live" } },
+      retention: { logsDays: 30 },
+    },
+    memory: {
+      async ready() {},
+      voiceSessions: {
+        async create(scope, input) { return { id: input.sessionId }; },
+        async get() { return null; },
+        async recordEvent() { return { status: "failed" }; },
+      },
+    },
+    providers: {
+      geminiLive: {
+        async validateLiveModel() { return { resourceName: "gemini-3.8-live" }; },
+        async createEphemeralToken() {
+          return {
+            token: "auth_tokens/test",
+            model: "gemini-3.8-live",
+            expiresAt: new Date(Date.now() + 60000).toISOString(),
+            newSessionExpiresAt: new Date(Date.now() + 30000).toISOString(),
+            wsEndpoint: "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained",
+          };
+        },
+      },
+    },
+    events: { emit() {} },
+  });
 
+  const unauthorized = fakeResponse();
+  await handleVoiceToken(
+    { method: "POST", headers: { origin: "https://example.com", "x-tenant-id": "attacker", "x-user-id": "attacker" }, body: {} },
+    unauthorized,
+    makeApp(),
+  );
+  assert.equal(unauthorized.statusCode, 401);
+
+  const disabled = fakeResponse();
+  await handleVoiceToken(
+    { method: "POST", headers: { origin: "https://example.com", authorization: "Bearer test-access", "x-tenant-id": "attacker", "x-user-id": "attacker" }, body: {} },
+    disabled,
+    makeApp({ voice: { enabled: false } }),
+  );
+  assert.equal(disabled.statusCode, 503);
+  assert.equal(disabled.body.code, "VOICE_FEATURE_DISABLED");
+
+  const noIdentity = fakeResponse();
+  await handleVoiceToken(
+    { method: "POST", headers: { origin: "https://example.com", authorization: "Bearer test-access", "x-tenant-id": "attacker", "x-user-id": "attacker" }, body: {} },
+    noIdentity,
+    makeApp(),
+  );
+  assert.equal(noIdentity.statusCode, 503);
+  assert.equal(noIdentity.body.code, "VOICE_IDENTITY_NOT_CONFIGURED");
+
+  const secureApp = makeApp();
+  secureApp.config.voice.fixedTenantId = "not-possible";
+});
+ 
 test("voice browser source contains no Gemini API key access and remains audio-only by design", async () => {
   const clientSource = await readFile(new URL("../voice/client.js", import.meta.url), "utf8");
   const inputSource = await readFile(new URL("../voice/audio-input.js", import.meta.url), "utf8");
