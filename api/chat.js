@@ -3,6 +3,8 @@ import { createJuniApplication } from "../core/app.js";
 import { authorizeRequest, checkOrigin, validateProviderModelSelection } from "../core/security.js";
 import { configuredProviderNames } from "../core/config.js";
 import { RouterError } from "../core/errors.js";
+import { resolveRequestIdentity } from "../core/identity.js";
+import { answerFirstEligibility } from "../core/answer-first.js";
 
 let application;
 
@@ -99,14 +101,6 @@ export default async function handler(req, res) {
     });
   }
 
-  const configured = configuredProviderNames(app.config);
-  if (!configured.length) {
-    return json(res, 503, {
-      error: "No AI provider API key is configured.",
-      providers: await app.juni.providerHealth(),
-    });
-  }
-
   const requestId = randomUUID();
   const request = {
     message,
@@ -120,6 +114,82 @@ export default async function handler(req, res) {
     metadata: { requestId, requiresWebResearch: Boolean(body.requiresWebResearch) },
   };
 
+  const eligibility = app.config.answerFirst?.enabled
+    ? answerFirstEligibility({
+        message,
+        messages: request.messages,
+        task: request.task,
+        modality: request.modality,
+        requiresWebResearch: Boolean(body.requiresWebResearch),
+        stream: request.stream,
+      })
+    : { eligible: false, reason: "disabled" };
+
+  let answerScope = null;
+  if (eligibility.eligible) {
+    try {
+      answerScope = resolveRequestIdentity(req, {
+        fixedTenantId: app.config.identity?.fixedTenantId ?? null,
+        fixedUserId: app.config.identity?.fixedUserId ?? null,
+        allowIdentityHeaders: app.config.identity?.allowIdentityHeaders === true,
+      });
+    } catch (error) {
+      if (error?.code !== "REQUEST_IDENTITY_NOT_CONFIGURED") {
+        return json(res, 500, { error: "Request identity is invalid.", requestId });
+      }
+    }
+  }
+
+  if (answerScope) {
+    try {
+      const saved = await app.memory.knowledge.findExactSavedAnswer(answerScope, message);
+      if (saved) {
+        try {
+          await app.memory.knowledge.recordAnswerHit(answerScope, saved.knowledgeId, {
+            matchType: "exact",
+            now: new Date(),
+          });
+        } catch (error) {
+          console.error("JUNI-AI Answer-First hit tracking failed", {
+            code: error?.code,
+            message: error?.message,
+            requestId,
+            knowledgeId: saved.knowledgeId,
+          });
+        }
+
+        const reply = typeof saved.answer === "string"
+          ? saved.answer
+          : (typeof saved.contentText === "string" && saved.contentText
+            ? saved.contentText
+            : JSON.stringify(saved.answer));
+
+        return json(res, 200, {
+          reply,
+          provider: saved.provider ?? "saved-answer",
+          model: saved.model ?? null,
+          usage: null,
+          requestId,
+          answerFirst: { hit: true, matchType: "exact" },
+        });
+      }
+    } catch (error) {
+      console.error("JUNI-AI Answer-First lookup failed", {
+        code: error?.code,
+        message: error?.message,
+        requestId,
+      });
+    }
+  }
+
+  const configured = configuredProviderNames(app.config);
+  if (!configured.length) {
+    return json(res, 503, {
+      error: "No AI provider API key is configured.",
+      providers: await app.juni.providerHealth(),
+    });
+  }
+
   try {
     if (request.stream) {
       return await streamResponse(
@@ -131,12 +201,38 @@ export default async function handler(req, res) {
 
     const response = await app.juni.generate(request);
 
+    let candidateStored = false;
+    if (answerScope && eligibility.eligible && typeof response.text === "string" && response.text.trim()) {
+      try {
+        const retentionDays = Number(app.config.retention?.cacheDays ?? 0);
+        const retentionExpiresAt = retentionDays > 0
+          ? new Date(Date.now() + retentionDays * 24 * 60 * 60 * 1000).toISOString()
+          : null;
+
+        await app.memory.knowledge.createAnswerCandidate(answerScope, {
+          question: message,
+          answer: response.text,
+          provider: response.provider,
+          model: response.model,
+          retentionExpiresAt,
+        });
+        candidateStored = true;
+      } catch (error) {
+        console.error("JUNI-AI Answer-First candidate storage failed", {
+          code: error?.code,
+          message: error?.message,
+          requestId,
+        });
+      }
+    }
+
     return json(res, 200, {
       reply: response.text ?? "",
       provider: response.provider,
       model: response.model,
       usage: response.usage ?? null,
       requestId,
+      ...(candidateStored ? { answerFirst: { hit: false, candidateStored: true } } : {}),
     });
   } catch (error) {
     if (error instanceof RouterError) {
