@@ -16,6 +16,25 @@ Step 1 uses `JUNI_API_TOKEN` as a server-side bearer access gate.
 
 This is intentionally simple and is not a substitute for per-user identity, sessions, or authorization roles.
 
+## Canonical request identity
+
+Persistent user-scoped operations use the canonical request identity resolver in `core/identity.js`.
+
+Identity precedence is:
+
+1. An authenticated identity supplied by a trusted authentication/session layer.
+2. An explicitly enabled internal identity-header mode.
+3. An explicitly configured server-fixed tenant/user scope.
+
+When an authenticated identity is present, `x-tenant-id` and `x-user-id` headers are not authoritative and cannot override it.
+
+The current access-code flow authenticates the application credential but does not itself create per-user accounts. For durable user-scoped features in this mode, configure:
+
+- `JUNI_IDENTITY_DEFAULT_TENANT_ID`
+- `JUNI_IDENTITY_DEFAULT_USER_ID`
+
+If no trusted identity source exists, the canonical resolver fails closed with `REQUEST_IDENTITY_NOT_CONFIGURED`.
+
 ## Request boundaries
 
 The API applies:
