@@ -100,6 +100,7 @@ export function loadConfig(env = process.env) {
   };
 
   return Object.freeze({
+    providers: Object.freeze(providers),
     app: {
       name: "JUNI-AI",
       environment: stringOrUndefined(env.NODE_ENV) ?? "development",
