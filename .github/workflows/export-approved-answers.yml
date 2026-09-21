@@ -29,6 +29,7 @@ jobs:
         env:
           JUNI_DATABASE_URL: ${{ secrets.JUNI_DATABASE_URL }}
           JUNI_DATABASE_AUTH_TOKEN: ${{ secrets.JUNI_DATABASE_AUTH_TOKEN }}
+          JUNI_APPROVED_ANSWER_EXPORT_ENABLED: ${{ secrets.JUNI_APPROVED_ANSWER_EXPORT_ENABLED }}
           JUNI_GITHUB_TOKEN: ${{ secrets.JUNI_GITHUB_TOKEN }}
           JUNI_EXPORT_TENANT_ID: ${{ secrets.JUNI_EXPORT_TENANT_ID }}
           JUNI_EXPORT_USER_ID: ${{ secrets.JUNI_EXPORT_USER_ID }}
