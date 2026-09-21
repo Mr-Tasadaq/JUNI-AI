@@ -8,6 +8,7 @@ import { createProviderRegistry } from "../providers/index.js";
 import { VoiceSessionController } from "./voice.js";
 import { createJuniMemoryApplication } from "../memory/app.js";
 import { createJuniResearchApplication } from "../research/app.js";
+import { createRateLimiter } from "../lib/rate-limit.js";
 
 export function createJuniApplication({ env = process.env, tools = createToolRegistry(), eventSink } = {}) {
   const config = loadConfig(env);
@@ -25,6 +26,11 @@ export function createJuniApplication({ env = process.env, tools = createToolReg
     sessionFactory: (options) => providers.geminiLive.connect(options),
     onEvent: (event) => events.emit(event.type, event),
   });
+  const rateLimiter = createRateLimiter({
+    client: config.storage.enabled ? memory.db.client : null,
+    ready: config.storage.enabled ? memory.ready : null,
+    databaseUrl: config.storage.databaseUrl,
+  });
 
   return Object.freeze({
     config,
@@ -35,6 +41,7 @@ export function createJuniApplication({ env = process.env, tools = createToolReg
     tools,
     juni,
     voice,
+    rateLimiter,
     memory,
     research,
   });
