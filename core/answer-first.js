@@ -16,6 +16,7 @@ export function answerFirstEligibility({
   modality = "text",
   requiresWebResearch = false,
   stream = false,
+  attachments = [],
 } = {}) {
   const text = String(message ?? "").trim();
 
@@ -24,6 +25,9 @@ export function answerFirstEligibility({
   if (modality !== "text") return { eligible: false, reason: "non_text_modality" };
   if (task !== "chat") return { eligible: false, reason: "non_chat_task" };
   if (requiresWebResearch) return { eligible: false, reason: "web_research_requested" };
+  if (Array.isArray(attachments) && attachments.length > 0) {
+    return { eligible: false, reason: "multimodal" };
+  }
   if (Array.isArray(messages) && messages.length > 0) {
     return { eligible: false, reason: "conversation_dependent" };
   }
