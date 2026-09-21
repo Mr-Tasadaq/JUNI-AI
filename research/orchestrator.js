@@ -105,13 +105,15 @@ export class ResearchOrchestrator {
         }
       }
       for(const citation of nativeModels) await this.#storage.addCitation(scope,{sessionId:session.id,...citation,provider:synthesis.provider,model:synthesis.model});
+      const persistedOperations=await this.#storage.listOperations(scope,session.id,{limit:200});
+      const persistedSearchCalls=persistedOperations.filter((operation)=>operation.operation_type==="search").length;
       const result={
         researchSessionId:session.id,question:request.query,mode:request.mode,answer:synthesis.answer,
 sources:storedSources,claims:synthesis.claims,evidence,citations:await this.#storage.listCitations(scope,session.id),searchQueries:[...new Set(searchQueriesIssued)],
         provider:synthesis.provider,model:synthesis.model,timestamp:new Date().toISOString(),
         confidence:synthesis.confidence,verification:{sourceCount:storedSources.length,evidenceCount:evidence.length,nativeCitationCount:nativeModels.length},
         warnings:[...warnings,...synthesis.warnings],errors,
-        usage:{provider:synthesis.provider,model:synthesis.model,searchCalls,urlRetrievalCount:retrievalCount,cacheHits,estimatedTokens:synthesis.usage?.totalTokens??null,latencyMs:Date.now()-started},
+        usage:{provider:synthesis.provider,model:synthesis.model,searchCalls:persistedSearchCalls,cacheHits,estimatedTokens:synthesis.usage?.totalTokens??null,latencyMs:Date.now()-started},
       };
       let candidate=null;
       if(request.allowKnowledgeCandidate && (request.mode==="KNOWLEDGE_ACQUISITION" || input.createKnowledgeCandidate===true)){
