@@ -70,6 +70,11 @@ export class RetentionService {
     return result.rows;
   }
 
+  // Backwards-compatible inspection API used by callers and tests.
+  async expired(scope, now = new Date()) {
+    return this.expiredCandidates(scope, now);
+  }
+
   async purge(scope, { confirm = false, allowMemoryTombstone = false } = {}) {
     assertScope(scope);
     if (!confirm) throw new Error("Retention purge requires explicit confirmation.");
