@@ -340,7 +340,7 @@ async function requestAssistant(text, history, researchEnabled = false, allowAut
       const supplied = window.prompt("Enter your JUNI-AI access code:");
       if (supplied?.trim()) {
         const authenticated = await authenticateWithAccessCode(supplied.trim());
-        if (authenticated.ok) return requestAssistant(text, history, researchEnabled, false);
+        if (authenticated.ok) return requestAssistant(text, history, researchEnabled, false, attachments);
         return { reply: authenticated.error, research: null };
       }
       return { reply: "JUNI-AI needs an access code for the server API. Use “Set access code” in the sidebar.", research: null };
