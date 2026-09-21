@@ -23,6 +23,27 @@ test("loads provider-neutral configuration without secrets", () => {
   assert.equal(config.storage.quotaBytes, 10_737_418_240);
   assert.equal(config.provenance.storageBudgetBytes, 10_737_418_240);
   assert.deepEqual(configuredProviderNames(config), []);
+  assert.deepEqual(config.security.requestAllowlist.providers, ["anthropic", "openai", "gemini"]);
+  assert.deepEqual(config.security.requestAllowlist.modelsByProvider.openai, ["gpt-test"]);
+  assert.deepEqual(config.security.requestAllowlist.modelsByProvider.anthropic, ["claude-test"]);
+  assert.deepEqual(config.security.requestAllowlist.modelsByProvider.gemini, ["gemini-test"]);
+});
+
+test("supports explicit client provider/model allowlist extensions", () => {
+  const config = loadConfig({
+    OPENAI_MODEL: "gpt-5.5",
+    ANTHROPIC_MODEL: "claude-opus-5",
+    GEMINI_MODEL: "gemini-3.8-flash",
+    JUNI_REQUEST_ALLOWED_PROVIDERS: "openai,gemini",
+    JUNI_REQUEST_ALLOWED_MODELS_JSON: JSON.stringify({
+      openai: ["gpt-5.5", "gpt-5.4"],
+      gemini: ["gemini-3.8-flash"],
+    }),
+  });
+
+  assert.deepEqual(config.security.requestAllowlist.providers, ["openai", "gemini"]);
+  assert.deepEqual(config.security.requestAllowlist.modelsByProvider.openai, ["gpt-5.5", "gpt-5.4"]);
+  assert.deepEqual(config.security.requestAllowlist.modelsByProvider.gemini, ["gemini-3.8-flash"]);
 });
 
 test("placeholder credentials are not interpreted as configured keys", () => {
