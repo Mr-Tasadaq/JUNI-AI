@@ -429,7 +429,7 @@ test("VoiceClient uses ephemeral token, keeps it in memory, handles interruption
   };
 
   const tokens = [
-    { token: "auth_tokens/one", model: "gemini-3.8-live", sessionId: "11111111-1111-4111-8111-111111111111", expiresAt: new Date(Date.now() + 1_000).toISOString(), newSessionExpiresAt: new Date(Date.now() + 60_000).toISOString(), wsEndpoint: GEMINI_LIVE_WS_ENDPOINT, captionsEnabled: true, audioChunkMs: 60, outputBufferLimitMs: 1200, maxReconnectAttempts: 2, reconnectBaseMs: 1, maxSessionMinutes: 30 },
+    { token: "auth_tokens/one", model: "gemini-3.8-live", sessionId: "11111111-1111-4111-8111-111111111111", expiresAt: new Date(Date.now() + 60_000).toISOString(), newSessionExpiresAt: new Date(Date.now() + 60_000).toISOString(), wsEndpoint: GEMINI_LIVE_WS_ENDPOINT, captionsEnabled: true, audioChunkMs: 60, outputBufferLimitMs: 1200, maxReconnectAttempts: 2, reconnectBaseMs: 1, maxSessionMinutes: 30 },
     { token: "auth_tokens/two", model: "gemini-3.8-live", sessionId: "11111111-1111-4111-8111-111111111111", expiresAt: new Date(Date.now() + 60_000).toISOString(), newSessionExpiresAt: new Date(Date.now() + 60_000).toISOString(), wsEndpoint: GEMINI_LIVE_WS_ENDPOINT, captionsEnabled: true, audioChunkMs: 60, outputBufferLimitMs: 1200, maxReconnectAttempts: 2, reconnectBaseMs: 1, maxSessionMinutes: 30 },
   ];
   let tokenCalls = 0;
