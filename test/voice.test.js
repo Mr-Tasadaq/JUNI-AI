@@ -233,7 +233,7 @@ test("voice tools reject arbitrary browser actions and unsafe URLs", async () =>
     "http://127.0.0.1",
     "https://example.com:8080/",
   ]) {
-    assert.throws(() => validateWebsiteUrl(url), /not allowed|allowed|Invalid/);
+    assert.throws(() => validateWebsiteUrl(url), /not allowed|allowed|Invalid|credentials/);
   }
 });
 
@@ -354,6 +354,7 @@ test("voice token route enforces feature/auth/identity without trusting browser 
       },
     },
     events: { emit() {} },
+    rateLimiter: { async check() { return { allowed: true, limit: 20, remaining: 19, retryAfter: 60 }; } },
   });
 
   const unauthorized = fakeResponse();
