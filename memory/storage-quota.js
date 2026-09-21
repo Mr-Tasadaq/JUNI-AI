@@ -39,6 +39,13 @@ const CATEGORY_QUERIES = Object.freeze({
   ],
   other: [
     "SELECT COALESCE(SUM(size_bytes),0) AS bytes FROM research_results WHERE tenant_id = ? AND user_id = ?",
+    "SELECT COALESCE(SUM(size_bytes),0) AS bytes FROM research_sessions WHERE tenant_id = ? AND user_id = ?",
+    "SELECT COALESCE(SUM(size_bytes),0) AS bytes FROM research_operations WHERE tenant_id = ? AND user_id = ?",
+    "SELECT COALESCE(SUM(size_bytes),0) AS bytes FROM research_sources WHERE tenant_id = ? AND user_id = ?",
+    "SELECT COALESCE(SUM(size_bytes),0) AS bytes FROM research_evidence WHERE tenant_id = ? AND user_id = ?",
+    "SELECT COALESCE(SUM(size_bytes),0) AS bytes FROM research_claims WHERE tenant_id = ? AND user_id = ?",
+    "SELECT COALESCE(SUM(size_bytes),0) AS bytes FROM research_citations WHERE tenant_id = ? AND user_id = ?",
+    "SELECT COALESCE(SUM(size_bytes),0) AS bytes FROM knowledge_candidates WHERE tenant_id = ? AND user_id = ?",
     "SELECT COALESCE(SUM(size_bytes),0) AS bytes FROM media_metadata WHERE tenant_id = ? AND user_id = ?",
     "SELECT COALESCE(SUM(size_bytes),0) AS bytes FROM model_provider_metadata WHERE tenant_id = ? AND user_id = ?",
   ],
