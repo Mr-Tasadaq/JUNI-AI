@@ -34,7 +34,7 @@ function normalizeImageAttachments(value) {
   }
 
   const allowed = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
-  const maxBytes = 3 * 1024 * 1024;
+  const maxBytes = 2 * 1024 * 1024;
   let totalBytes = 0;
 
   return value.map((item) => {
@@ -48,7 +48,7 @@ function normalizeImageAttachments(value) {
     const bytes = Math.floor(item.data.length * 3 / 4) - (item.data.endsWith("==") ? 2 : item.data.endsWith("=") ? 1 : 0);
     if (bytes <= 0 || bytes > maxBytes) throw new TypeError("Image attachment is too large.");
     totalBytes += bytes;
-    if (totalBytes > 8 * 1024 * 1024) throw new TypeError("Total image attachments are too large.");
+    if (totalBytes > 6 * 1024 * 1024) throw new TypeError("Total image attachments are too large.");
 
     return {
       type: "image",
