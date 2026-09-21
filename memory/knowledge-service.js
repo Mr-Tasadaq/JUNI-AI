@@ -48,6 +48,11 @@ export class KnowledgeService {
     this.#answerEmbedder = answerEmbedder;
   }
 
+  setAnswerInfrastructure({ vectors = null, answerEmbedder = null } = {}) {
+    this.#vectors = vectors;
+    this.#answerEmbedder = answerEmbedder;
+  }
+
   async create(scope, input) {
     assertScope(scope);
     assertSourceType(input.sourceType ?? "model");
@@ -141,6 +146,7 @@ export class KnowledgeService {
     answer,
     provider = null,
     model = null,
+    sourceRef = null,
     retentionExpiresAt = null,
   } = {}) {
     assertScope(scope);
@@ -174,6 +180,7 @@ export class KnowledgeService {
       content: answerText,
       contentText: answerText,
       sourceType: "model",
+      sourceRef,
       trustLevel: "generated",
       status: "candidate",
       retentionExpiresAt,
@@ -186,6 +193,8 @@ export class KnowledgeService {
         metadata: {
           answerFirstCandidate: true,
           questionHash: hashString(normalizedQuestion),
+          model,
+          requestId: sourceRef,
         },
       },
     });
@@ -610,6 +619,12 @@ export class KnowledgeService {
       changeSummary: "Answer-First candidate approved.",
     });
 
+    const provenance = updated.provenance_ref
+      ? await this.#provenance.get(scope, updated.provenance_ref)
+      : null;
+    const provider = provenance?.provider ?? null;
+    const model = provenance?.metadata?.model ?? null;
+
     let embedding = null;
     if (this.#answerEmbedder) {
       embedding = await this.#answerEmbedder({
@@ -626,8 +641,8 @@ export class KnowledgeService {
       question: candidate.title,
       expiresAt: updated.retention_expires_at,
       cacheable: true,
-      provider: updated.source_type === "model" ? null : updated.source_type,
-      model: null,
+      provider,
+      model,
       embedding,
     });
 
