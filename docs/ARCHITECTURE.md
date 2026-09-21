@@ -227,3 +227,27 @@ The Step 1 boundary is deliberate: later modules should attach to the core contr
 ## Step 3 storage
 
 Research sessions, operations, source content, evidence, claims, citations, candidates, provenance, and research caches count toward the existing 10 GiB logical budget. Retrieval and synthesis are bounded; the complete research store is never loaded into model context.
+
+
+## Step 4 — realtime voice
+
+The browser voice path is:
+
+1. Explicit voice-start UI action.
+2. Authenticated \`POST /api/voice-token\`.
+3. Server validates the configured Gemini Live model and creates a short-lived constrained token.
+4. Browser opens the constrained Gemini \`v1beta\` WebSocket with the ephemeral token.
+5. Setup locks AUDIO response modality, the Juni identity/tool contract, session resumption and context compression.
+6. \`voice/audio-input.js\` captures microphone audio and uses AudioWorklet resampling to 16kHz PCM16 mono in 20–100ms chunks.
+7. \`voice/audio-output.js\` decodes 24kHz PCM16 and schedules response buffers with a bounded queue.
+8. \`voice/protocol.js\` normalizes Live server messages; unknown fields are tolerated.
+9. Interruption clears stale audio immediately. Gemini Live VAD remains authoritative for conversation turn detection.
+10. Session resumption handles stay in runtime memory only. GoAway/close events trigger bounded reconnect and can mint a new token constrained to the latest handle.
+11. Safe tools are limited to \`openWebsite\` and \`getCurrentTime\`. No arbitrary browser code is executed.
+12. Voice session counters and safe lifecycle metadata are persisted through Step 2 and count against the existing logical storage quota.
+
+The browser never receives the long-lived Gemini API key. The static HTML/JavaScript architecture is unchanged; no React/Vite/Next.js migration was introduced.
+
+### Step 4 boundary
+
+Step 4 does not implement unrestricted browser/computer automation, autonomous external actions, continuous recording, full video intelligence, autonomous learning, distributed blockchain infrastructure, or immutable external ledger anchoring.
