@@ -6,7 +6,7 @@
   "description": "JUNI-AI multi-provider AI agent foundation.",
   "scripts": {
     "test": "node --test",
-    "check": "node --check app.js && node --check api/chat.js && node --check api/auth.js && node --check api/research.js && node --check api/answers.js && node --check api/voice-token.js && node --check api/health.js",
+    "check": "node --check app.js && node --check api/chat.js && node --check api/auth.js && node --check api/research.js && node --check api/answers.js && node --check api/voice-token.js && node --check api/health.js && node --check scripts/verify-production-config.js",
     "dev": "npx serve .",
     "export:answers": "node scripts/export-approved-answers.js",
     "audit:security": "npm audit --omit=dev --audit-level=high",
