@@ -109,7 +109,17 @@ export class ModelRouter {
 
 
   async researchCandidates(request, { operation = "search" } = {}) {
-    const normalized = normalizeRequest(request, { model: this.#config.app.defaultModel });
+    const base = normalizeRequest(request, { model: this.#config.app.defaultModel });
+    const normalized = {
+      ...base,
+      query: String(request?.query ?? request?.message ?? ""),
+      urls: Array.isArray(request?.urls) ? request.urls : [],
+      allowedDomains: Array.isArray(request?.allowedDomains) ? request.allowedDomains : [],
+      blockedDomains: Array.isArray(request?.blockedDomains) ? request.blockedDomains : [],
+      maxSearchQueries: request?.maxSearchQueries,
+      maxSearchUses: request?.maxSearchUses,
+      timeoutMs: request?.timeoutMs,
+    };
     const configured = [
       ...(normalized.provider ? [normalized.provider] : []),
       ...(this.#config.app.providerPriority ?? []),
