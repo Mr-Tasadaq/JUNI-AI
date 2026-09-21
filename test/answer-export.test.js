@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildApprovedAnswersIndex, updateGithubContentFile } from "../scripts/export-approved-answers.js";
+import { buildApprovedAnswersIndex, updateGithubContentFile, exportApprovedAnswers } from "../scripts/export-approved-answers.js";
 
 test("approved-answer index contains only approved answer fields", () => {
   const content = buildApprovedAnswersIndex([
@@ -81,4 +81,12 @@ test("GitHub export retries 409/422 using the latest file SHA", async () => {
   const puts = calls.filter((call) => call.options.method === "PUT");
   assert.match(puts[0].options.body, /sha-old/);
   assert.match(puts[1].options.body, /sha-new/);
+});
+
+test("approved-answer export is disabled unless explicitly enabled", async () => {
+  const result = await exportApprovedAnswers({
+    JUNI_APPROVED_ANSWER_EXPORT_ENABLED: "false",
+  });
+  assert.equal(result.skipped, true);
+  assert.equal(result.reason, "approved_answer_export_disabled");
 });
