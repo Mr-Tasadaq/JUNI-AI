@@ -17,8 +17,14 @@ import {
 } from "./auxiliary-services.js";
 import { LearningPipeline } from "./learning-pipeline.js";
 import { MemoryInspectionService } from "./inspection-service.js";
+import { SavedAnswerService } from "./answer-service.js";
 
-export function createJuniMemoryApplication({ config, events, embedder = null } = {}) {
+export function createJuniMemoryApplication({
+  config,
+  events,
+  embedder = null,
+  answerEmbedder = null,
+} = {}) {
   const db = createJuniDatabase({
     url: config.storage.databaseUrl,
     authToken: config.storage.databaseAuthToken,
@@ -139,6 +145,15 @@ export function createJuniMemoryApplication({ config, events, embedder = null } 
     quota,
   });
 
+  const answers = new SavedAnswerService({
+    client: db.client,
+    quota,
+    ledger,
+    vectors,
+    embedder: answerEmbedder,
+    events,
+  });
+
   return Object.freeze({
     db,
     ready: db.ready,
@@ -158,5 +173,6 @@ export function createJuniMemoryApplication({ config, events, embedder = null } 
     modelMetadata,
     learning,
     inspection,
+    answers,
   });
 }
