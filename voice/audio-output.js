@@ -56,7 +56,7 @@ export class VoiceAudioOutput {
     await this.start();
     const bytes = typeof base64OrBytes === "string" ? decodeBase64(base64OrBytes) : normalizeBytes(base64OrBytes);
     if (!bytes.byteLength) return { bufferedMs: this.bufferedMs, scheduled: false };
-    const sampleRate = parseRate(mimeType) || 24000;
+    const sampleRate = parseAudioRate(mimeType) || 24000;
     const evenBytes = bytes.byteLength - (bytes.byteLength % 2);
     const audioBuffer = this.#context.createBuffer(1, Math.floor(evenBytes / 2), sampleRate);
     const channel = audioBuffer.getChannelData(0);
