@@ -215,6 +215,7 @@ export class VoiceClient {
       body: JSON.stringify({
         sessionId: this.#sessionId,
         captions: this.#captionsPreference,
+        resumptionHandle: this.#resumptionHandle,
       }),
     });
     let data = {};
@@ -507,7 +508,6 @@ export class VoiceClient {
   #emitStateSpecific(state) {
     if (state === "listening") this.#emit("voice.listening.started", { sessionId: this.#sessionId });
     if (state === "speaking") this.#emit("voice.speaking.started", { sessionId: this.#sessionId });
-    if (state === "reconnecting") this.#emit("voice.reconnect.started", { sessionId: this.#sessionId });
   }
 
   #setError(error) {
