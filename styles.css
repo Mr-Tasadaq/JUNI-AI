@@ -40,3 +40,61 @@
   font-size: .72rem;
   line-height: 1.45;
 }
+
+.composer-inner {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 8px;
+  align-items: end;
+}
+.composer-tool-button {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+}
+.voice-button[disabled] { opacity: .55; cursor: wait; }
+.attachment-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 8px;
+}
+.attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 260px;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: .75rem;
+}
+.attachment-remove {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.voice-status {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: .76rem;
+}
+@media (max-width: 640px) {
+  .composer-inner {
+    grid-template-columns: auto 1fr auto auto;
+  }
+  .composer-tool-button {
+    width: 38px;
+    height: 38px;
+    flex-basis: 38px;
+  }
+}
