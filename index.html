@@ -39,6 +39,9 @@
         <button class="sidebar-action" id="accessCodeButton" type="button">
           <span aria-hidden="true">🔐</span> Set access code
         </button>
+        <button class="sidebar-action" id="answerReviewButton" type="button">
+          <span aria-hidden="true">✓</span> Review saved answers
+        </button>
         <button class="sidebar-action" id="themeButton" type="button">
           <span aria-hidden="true" id="themeIcon">☾</span> Toggle theme
         </button>
@@ -53,7 +56,10 @@
           <span class="eyebrow">JUNI-AI</span>
           <h1>Your ideas, in conversation.</h1>
         </div>
-        <div class="status-pill"><span class="status-dot"></span> Ready</div>
+        <div class="status-pill" id="statusPill" role="status" aria-live="polite">
+          <span class="status-dot" id="statusDot"></span>
+          <span id="statusText">Checking service…</span>
+        </div>
       </header>
 
       <section class="chat-wrap" aria-label="Chat">
@@ -101,6 +107,7 @@
         <input id="imageInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden>
         <div id="attachmentList" class="attachment-list" hidden></div>
         <div id="voiceStatus" class="voice-status" hidden aria-live="polite"></div>
+        <div id="composerNotice" class="composer-notice" hidden role="status" aria-live="polite"></div>
         <div class="composer-meta">
           <label class="research-toggle">
             <input type="checkbox" id="researchToggle">
@@ -111,6 +118,24 @@
         </div>
       </form>
     </main>
+  </div>
+
+  <div class="modal-backdrop" id="answerModal" hidden>
+    <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="answerModalTitle">
+      <div class="modal-header">
+        <div>
+          <span class="eyebrow">KNOWLEDGE REVIEW</span>
+          <h2 id="answerModalTitle">Saved answer candidates</h2>
+        </div>
+        <button class="icon-button" id="answerModalClose" type="button" aria-label="Close saved answer review" title="Close">×</button>
+      </div>
+      <p class="modal-description">JUNI-AI only serves approved saved answers. Review generated candidates before they become reusable knowledge.</p>
+      <div class="modal-toolbar">
+        <span id="answerReviewStatus" class="modal-status" role="status" aria-live="polite"></span>
+        <button class="secondary-button" id="answerRefreshButton" type="button">Refresh</button>
+      </div>
+      <div id="answerCandidateList" class="candidate-list" aria-live="polite"></div>
+    </section>
   </div>
 
   <script src="app.js" defer></script>
