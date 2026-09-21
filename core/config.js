@@ -5,6 +5,11 @@ function stringOrUndefined(value) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+function clampVoiceSeconds(value, fallback, min, max) {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  return Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : fallback;
+}
+
 function intOrDefault(value, fallback, min = Number.MIN_SAFE_INTEGER) {
   const parsed = Number.parseInt(String(value ?? ""), 10);
   return Number.isFinite(parsed) && parsed >= min ? parsed : fallback;
@@ -132,8 +137,17 @@ export function loadConfig(env = process.env) {
     observability: {
       maxEventPayloadBytes: intOrDefault(env.JUNI_MAX_EVENT_PAYLOAD_BYTES, 8_192, 256),
     },
-    provenance: {
-      storageBudgetBytes: intOrDefault(env.JUNI_STORAGE_BUDGET_BYTES, 10 * 1024 * 1024 * 1024, 1),
+    voice: {
+      enabled: boolOrDefault(env.JUNI_FEATURE_VOICE, false),
+      tokenTtlSeconds: clampVoiceSeconds(env.JUNI_VOICE_TOKEN_TTL_SECONDS, 1_800, 60, 71_999),
+      newSessionTtlSeconds: clampVoiceSeconds(env.JUNI_VOICE_NEW_SESSION_TTL_SECONDS, 60, 10, 3_600),
+      maxSessionMinutes: clampVoiceSeconds(env.JUNI_VOICE_MAX_SESSION_MINUTES, 30, 1, 120),
+      captionsEnabled: boolOrDefault(env.JUNI_VOICE_CAPTIONS_ENABLED, false),
+      audioChunkMs: clampVoiceSeconds(env.JUNI_VOICE_AUDIO_CHUNK_MS, 60, 20, 100),
+      outputBufferLimitMs: clampVoiceSeconds(env.JUNI_VOICE_OUTPUT_BUFFER_LIMIT_MS, 1_200, 100, 5_000),
+      maxReconnectAttempts: clampVoiceSeconds(env.JUNI_VOICE_MAX_RECONNECT_ATTEMPTS, 5, 0, 10),
+      reconnectBaseMs: clampVoiceSeconds(env.JUNI_VOICE_RECONNECT_BASE_MS, 500, 100, 5_000),
+      liveApiVersion: "v1beta",
     },
   });
 }
