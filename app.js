@@ -38,6 +38,8 @@ const elements = {
 let chats = loadChats();
 let activeChatId = chats[0]?.id ?? null;
 let isGenerating = false;
+
+startStartupSequence();
 let pendingImages = [];
 const voiceState = {
   socket: null,
@@ -128,6 +130,37 @@ elements.themeButton.addEventListener("click", () => {
 elements.menuButton.addEventListener("click", () => {
   document.body.classList.toggle("sidebar-open");
 });
+
+function startStartupSequence() {
+  const screen = document.querySelector("#startupScreen");
+  const progress = document.querySelector("#startupProgress");
+  const status = document.querySelector("#startupStatus");
+  if (!screen) return;
+
+  const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+  const setProgress = (value) => {
+    if (progress) progress.style.width = value + "%";
+  };
+  const setStatus = (value) => {
+    if (status) status.textContent = value;
+  };
+
+  setProgress(12);
+  window.requestAnimationFrame(() => setProgress(46));
+  window.setTimeout(() => {
+    setProgress(78);
+    setStatus("Preparing your workspace…");
+  }, reducedMotion ? 40 : 260);
+  window.setTimeout(() => {
+    setProgress(100);
+    setStatus("JUNI-AI is ready.");
+  }, reducedMotion ? 100 : 650);
+  window.setTimeout(() => {
+    screen.classList.add("startup-hidden");
+    screen.setAttribute("aria-hidden", "true");
+    window.setTimeout(() => screen.remove(), reducedMotion ? 0 : 260);
+  }, reducedMotion ? 220 : 1100);
+}
 
 function activeConversationId() {
   return getActiveChat()?.id ?? null;
