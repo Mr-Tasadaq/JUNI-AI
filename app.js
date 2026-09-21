@@ -1,3 +1,4 @@
+import { VoiceClient } from "./voice/client.js";
 const STORAGE_KEY = "juni-ai-chats-v1";
 const THEME_KEY = "juni-ai-theme-v1";
 const AUTH_KEY = "juni-ai-access-token-v1";
@@ -19,11 +20,163 @@ const elements = {
   menuButton: document.querySelector("#menuButton"),
   researchToggle: document.querySelector("#researchToggle"),
   researchHint: document.querySelector("#researchHint"),
+  voiceModeButton: document.querySelector("#voiceModeButton"),
+  voicePanel: document.querySelector("#voicePanel"),
+  voiceStage: document.querySelector("#voiceStage"),
+  voiceOrb: document.querySelector("#voiceOrb"),
+  voiceStateLabel: document.querySelector("#voiceStateLabel"),
+  voiceHint: document.querySelector("#voiceHint"),
+  voiceCaptions: document.querySelector("#voiceCaptions"),
+  voiceStartButton: document.querySelector("#voiceStartButton"),
+  voiceMuteButton: document.querySelector("#voiceMuteButton"),
+  voiceStopButton: document.querySelector("#voiceStopButton"),
+  voiceRetryButton: document.querySelector("#voiceRetryButton"),
+  voiceClearButton: document.querySelector("#voiceClearButton"),
+  voiceVolume: document.querySelector("#voiceVolume"),
+  voiceToolOutput: document.querySelector("#voiceToolOutput"),
+  voiceError: document.querySelector("#voiceError"),
 };
 
 let chats = loadChats();
 let activeChatId = chats[0]?.id ?? null;
 let isGenerating = false;
+
+const voiceClient = new VoiceClient({
+  elements: {
+    startButton: elements.voiceStartButton,
+    stopButton: elements.voiceStopButton,
+    retryButton: elements.voiceRetryButton,
+    stateLabel: elements.voiceStateLabel,
+    connectionDot: document.querySelector(".voice-connection-dot"),
+    voicePanel: elements.voicePanel,
+    captionsToggle: elements.voiceCaptionsToggle,
+  },
+  onState: ({ state, counters }) => {
+    updateVoiceUiState(state, counters);
+  },
+  onCaption: (caption) => {
+    if (!elements.voiceCaptions) return;
+    const line = document.createElement("div");
+    line.className = "voice-caption " + (caption.speaker === "JUNI" ? "juni" : "you") + (caption.finished ? " final" : " interim");
+    const label = document.createElement("strong");
+    label.textContent = caption.speaker;
+    const text = document.createElement("span");
+    text.textContent = caption.text;
+    line.append(label, text);
+    if (caption.finished) elements.voiceCaptions.appendChild(line);
+    else {
+      const previous = elements.voiceCaptions.querySelector(".interim");
+      previous?.replaceWith(line);
+      if (!previous) elements.voiceCaptions.appendChild(line);
+    }
+    elements.voiceCaptions.scrollTop = elements.voiceCaptions.scrollHeight;
+  },
+  onEvent: (event) => {
+    if (event.type === "voice.level.input" && elements.voiceOrb) {
+      elements.voiceOrb.style.setProperty("--voice-input-level", String(Math.min(1, Number(event.level) || 0)));
+    }
+    if (event.type === "voice.level.output" && elements.voiceOrb) {
+      elements.voiceOrb.style.setProperty("--voice-output-level", String(Math.min(1, Number(event.level) || 0)));
+    }
+    if (event.type === "voice.session.resumption.updated" && elements.voiceHint) {
+      elements.voiceHint.textContent = "Live session can resume if the connection resets.";
+    }
+  },
+  onOpenWebsite: (url) => {
+    elements.voiceToolOutput.hidden = false;
+    elements.voiceToolOutput.replaceChildren();
+    const label = document.createElement("span");
+    label.textContent = "Juni prepared a website: ";
+    const link = document.createElement("button");
+    link.type = "button";
+    link.className = "voice-open-link";
+    link.textContent = url;
+    link.addEventListener("click", () => {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }, { once: true });
+    elements.voiceToolOutput.append(label, link);
+  },
+  onError: (error) => {
+    if (!elements.voiceError) return;
+    elements.voiceError.hidden = false;
+    elements.voiceError.textContent = error?.message || "Voice error.";
+  },
+});
+
+function setVoiceMode(active) {
+  const enabled = Boolean(active);
+  document.body.classList.toggle("voice-active", enabled);
+  elements.voicePanel.hidden = !enabled;
+  elements.voiceModeButton.setAttribute("aria-pressed", String(enabled));
+  elements.voiceModeButton.textContent = enabled ? "Text mode" : "Voice";
+  if (enabled) {
+    elements.voiceError.hidden = true;
+    elements.voiceHint.textContent = "Press Start voice to grant microphone access.";
+    elements.voiceStartButton.focus();
+  } else {
+    void voiceClient.stop("mode_switched");
+    elements.voiceModeButton.focus();
+  }
+}
+
+function updateVoiceUiState(state, counters = {}) {
+  const labels = {
+    idle: "Ready",
+    requesting_permission: "Waiting for microphone permission",
+    connecting: "Connecting to Gemini Live",
+    listening: "Listening",
+    speaking: "Juni is speaking",
+    interrupted: "Listening after interruption",
+    reconnecting: "Reconnecting",
+    error: "Voice error",
+    closing: "Stopping",
+    closed: "Voice stopped",
+  };
+  elements.voiceStateLabel.textContent = labels[state] || state;
+  elements.voicePanel.dataset.state = state;
+  if (state === "error") elements.voiceHint.textContent = "Voice stopped. Check permissions or connection, then retry.";
+  else if (state === "reconnecting") elements.voiceHint.textContent = "Connection interrupted. Preserving the Live session when possible…";
+  else if (state === "listening") elements.voiceHint.textContent = "Listening. Speak naturally; Juni responds with audio.";
+  else if (state === "speaking") elements.voiceHint.textContent = "Juni is speaking. Start talking to interrupt.";
+  elements.voiceStage?.style.setProperty("--voice-input-level", String(Math.min(1, Number(counters.inputLevel) || 0)));
+  elements.voiceStage?.style.setProperty("--voice-output-level", String(Math.min(1, Number(counters.outputLevel) || 0)));
+  elements.voiceMuteButton.disabled = !["listening", "speaking", "interrupted"].includes(state);
+  elements.voiceMuteButton.setAttribute("aria-pressed", String(voiceClient.muted));
+  elements.voiceMuteButton.textContent = voiceClient.muted ? "Unmute" : "Mute";
+}
+
+elements.voiceModeButton?.addEventListener("click", () => {
+  setVoiceMode(document.body.classList.contains("voice-active") === false);
+});
+elements.voiceStartButton?.addEventListener("click", async () => {
+  elements.voiceError.hidden = true;
+  await voiceClient.start();
+});
+elements.voiceStopButton?.addEventListener("click", async () => {
+  await voiceClient.stop("user_stopped");
+});
+elements.voiceRetryButton?.addEventListener("click", async () => {
+  elements.voiceError.hidden = true;
+  await voiceClient.retry();
+});
+elements.voiceMuteButton?.addEventListener("click", () => {
+  voiceClient.setMuted(!voiceClient.muted);
+  updateVoiceUiState(voiceClient.state);
+});
+elements.voiceCaptionsToggle?.addEventListener("change", (event) => {
+  voiceClient.setCaptionsEnabled(event.target.checked);
+});
+elements.voiceVolume?.addEventListener("input", (event) => {
+  voiceClient.setVolume(event.target.value);
+});
+elements.voiceClearButton?.addEventListener("click", async () => {
+  await voiceClient.stop("user_cleared");
+  elements.voiceCaptions?.replaceChildren();
+  elements.voiceToolOutput.hidden = true;
+  elements.voiceError.hidden = true;
+  elements.voiceHint.textContent = "Press Start voice to begin a new voice session.";
+});
+
 
 if (!activeChatId) {
   activeChatId = createChat();
