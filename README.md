@@ -217,6 +217,15 @@ Operational variables:
 - `JUNI_RATE_WINDOW_SECONDS`
 - `JUNI_MAX_EVENT_PAYLOAD_BYTES`
 - `JUNI_STORAGE_BUDGET_BYTES`
+- `JUNI_RESEARCH_MAX_SOURCES`
+- `JUNI_RESEARCH_MAX_SEARCH_QUERIES`
+- `JUNI_RESEARCH_MAX_RETRIEVED_BYTES`
+- `JUNI_RESEARCH_MAX_SOURCE_BYTES`
+- `JUNI_RESEARCH_RETRIEVAL_TIMEOUT_MS`
+- `JUNI_RESEARCH_ALLOWED_DOMAINS`
+- `JUNI_RESEARCH_BLOCKED_DOMAINS`
+- `JUNI_RESEARCH_DEFAULT_TENANT_ID`
+- `JUNI_RESEARCH_DEFAULT_USER_ID`
 
 Never commit real credential values.
 
@@ -366,16 +375,26 @@ Step 3 can add authenticated end-user memory HTTP APIs, live research ingestion,
 
 ## Step 3 prerequisites
 
-Step 3 can build research/web ingestion on top of the scoped services in Step 2.
+Step 3 — controlled web research & knowledge acquisition
 
-Prerequisites:
+Implemented in the repository:
 
-- authenticated end-user identity/session context for HTTP memory access
-- a web/search tool implementation registered through the Step 1 ToolRegistry
-- source fetch/retrieval policy and domain/safety controls
-- research-result retention and approval rules
-- an embedding provider or embedding API integration
-- a clear policy for promoting external research from candidate knowledge to important/permanent knowledge
+- explicit QUICK_LOOKUP, RESEARCH, DEEP_RESEARCH, URL_ANALYSIS, SOURCE_COMPARISON, and KNOWLEDGE_ACQUISITION modes
+- provider-neutral web-search capability discovery and retry/fallback in the Model Router
+- OpenAI web search, Gemini Google Search grounding, Gemini URL Context, and Anthropic web search adapters
+- controlled HTTP(S) retrieval with URL canonicalization, response limits, redirect validation, DNS/private-network checks, and prompt-injection isolation
+- persistent research sessions, operations, sources, evidence, claims, citations, and knowledge candidates
+- provider-native citation preservation plus application citation validation against actual evidence
+- source hashing and metadata hashing connected to the Step 2 provenance ledger
+- descriptive source-quality metadata rather than a universal truth/trust score
+- research cache using the Step 2 cache/quota layer
+- explicit candidate approval/rejection before persistent knowledge creation
+- optional embedding creation through the existing provider-neutral vector store
+- server-side POST /api/research APIs and minimal UI research state/source links
+
+See docs/RESEARCH.md for the full pipeline, security boundary, configuration, API actions, and limitations.
+
+Research is disabled by default through JUNI_FEATURE_WEB_RESEARCH=false. Enable it only after configuring at least one supported provider and a secure research identity scope for the HTTP endpoint.
 
 Step 4 can add a durable external audit checkpoint or other independent anchoring for the tamper-evident provenance chain.
 
