@@ -1,5 +1,5 @@
 import { createJuniApplication } from "../core/app.js";
-import { authorizeRequest, checkOrigin } from "../core/security.js";
+import { authorizeRequest, checkOrigin, requestClientKey } from "../core/security.js";
 import { resolveRequestIdentity } from "../core/identity.js";
 
 let application;
@@ -15,11 +15,6 @@ function json(res, status, body) {
   return res.json(body);
 }
 
-function clientKey(req) {
-  return req.headers["x-forwarded-for"]?.split(",")[0]?.trim()
-    || req.headers["x-real-ip"]
-    || "unknown";
-}
 
 function resolveScope(req, app) {
   return resolveRequestIdentity(req, {
@@ -55,7 +50,7 @@ export default async function handler(req, res) {
   const limit = Number.parseInt(process.env.JUNI_RATE_LIMIT || "20", 10);
   const windowSeconds = Number.parseInt(process.env.JUNI_RATE_WINDOW_SECONDS || "60", 10);
   const rate = await app.rateLimiter.check(
-    clientKey(req),
+    requestClientKey(req),
     Number.isFinite(limit) && limit > 0 ? limit : 20,
     Number.isFinite(windowSeconds) && windowSeconds > 0 ? windowSeconds : 60,
   );
