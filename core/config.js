@@ -176,6 +176,8 @@ export function loadConfig(env = process.env) {
       allowedOrigin: stringOrUndefined(env.JUNI_ALLOWED_ORIGIN),
       authCookieName: stringOrUndefined(env.JUNI_AUTH_COOKIE_NAME) ?? "juni_auth",
       authCookieMaxAgeSeconds: intOrDefault(env.JUNI_AUTH_COOKIE_MAX_AGE_SECONDS, 2_592_000, 60),
+      authRateLimit: intOrDefault(env.JUNI_AUTH_RATE_LIMIT, 5, 1),
+      authRateWindowSeconds: intOrDefault(env.JUNI_AUTH_RATE_WINDOW_SECONDS, 300, 10),
       maxMessageLength: intOrDefault(env.JUNI_MAX_MESSAGE_LENGTH, 4_000, 1),
       maxHistory: intOrDefault(env.JUNI_MAX_HISTORY, 20, 1),
       requestAllowlist: buildRequestAllowlist(providers, env),
