@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createJuniApplication } from "../core/app.js";
-import { authorizeRequest, checkOrigin } from "../core/security.js";
+import { authorizeRequest, checkOrigin, validateProviderModelSelection } from "../core/security.js";
 import { configuredProviderNames } from "../core/config.js";
 import { RouterError } from "../core/errors.js";
 import { checkRateLimit } from "../lib/rate-limit.js";
@@ -86,6 +86,17 @@ export default async function handler(req, res) {
     });
   }
 
+  const selection = validateProviderModelSelection(
+    { provider: body.provider, model: body.model },
+    app.config.security.requestAllowlist
+  );
+  if (!selection.allowed) {
+    return json(res, 400, {
+      error: selection.error,
+      code: selection.code,
+    });
+  }
+
   const configured = configuredProviderNames(app.config);
   if (!configured.length) {
     return json(res, 503, {
@@ -97,8 +108,8 @@ export default async function handler(req, res) {
   const requestId = randomUUID();
   const request = {
     message,
-    provider: typeof body.provider === "string" ? body.provider : undefined,
-    model: typeof body.model === "string" ? body.model : undefined,
+    provider: selection.provider,
+    model: selection.model,
     task: typeof body.task === "string" ? body.task : "chat",
     modality: typeof body.modality === "string" ? body.modality : "text",
     latency: typeof body.latency === "string" ? body.latency : "balanced",
