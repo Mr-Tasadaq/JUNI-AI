@@ -232,6 +232,7 @@ export default async function handler(req, res) {
         modality: request.modality,
         requiresWebResearch: Boolean(body.requiresWebResearch),
         stream: request.stream,
+        attachments,
       })
     : { eligible: false, reason: "disabled" };
 
@@ -450,3 +451,5 @@ export default async function handler(req, res) {
     });
   }
 }
+
+export { normalizeImageAttachments };
