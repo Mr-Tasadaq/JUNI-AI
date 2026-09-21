@@ -37,6 +37,8 @@ export class VoiceClient {
   #onEvent;
   #onOpenWebsite;
   #onError;
+  #onVisibilityChange;
+  #onPageHide;
   #level = { input: 0, output: 0 };
 
   constructor({
@@ -95,6 +97,7 @@ export class VoiceClient {
       this.#tokenExpiresAt = Date.parse(this.#config.expiresAt);
       this.#sessionId = this.#config.sessionId;
       this.#model = this.#config.model;
+      this.#onEvent({ type: "voice.session.started", sessionId: this.#sessionId, provider: "gemini", model: this.#model });
       this.#machine = new VoiceStateMachine({ sessionId: this.#sessionId });
       this.#emitState();
       await this.#connectSocket(false);
@@ -109,6 +112,7 @@ export class VoiceClient {
     this.#clearSessionDeadline();
     this.#machine && !["closing", "closed"].includes(this.#machine.state) && this.#safeTransition("closing", { reason });
     try { await this.#audioInput?.stop(); } catch {}
+    this.#onEvent({ type: "voice.listening.stopped", sessionId: this.#sessionId, reason });
     try { this.#socket?.close(1000, "voice stopped"); } catch {}
     this.#socket = null;
     this.#setupReady = false;
@@ -263,7 +267,11 @@ export class VoiceClient {
         case "waiting.for.input":
         case "turn.complete":
           this.#toolCallsThisTurn = 0;
-          if (this.state === "speaking" || this.state === "interrupted") this.#safeTransition("listening", { turnComplete: true });
+          if (this.state === "speaking" || this.state === "interrupted") {
+            this.#onEvent({ type: "voice.speaking.stopped", sessionId: this.#sessionId });
+            this.#safeTransition("listening", { turnComplete: true });
+            this.#onEvent({ type: "voice.listening.started", sessionId: this.#sessionId });
+          }
           break;
         case "generation.complete":
           this.#onEvent({ type: "voice.generation.complete", sessionId: this.#sessionId });
@@ -326,6 +334,7 @@ export class VoiceClient {
 
   async #handleInterruption(reason) {
     try { this.#audioOutput?.clear(); } catch {}
+    if (this.state === "speaking") this.#onEvent({ type: "voice.speaking.stopped", sessionId: this.#sessionId, reason });
     if (["speaking", "listening"].includes(this.state)) this.#safeTransition("interrupted", { reason });
     if (this.state === "interrupted") this.#safeTransition("listening", { reason });
     await this.#recordSession({
