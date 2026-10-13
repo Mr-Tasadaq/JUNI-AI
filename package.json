@@ -14,7 +14,7 @@
   },
   "engines": { "node": ">=22" },
   "dependencies": {
-    "@anthropic-ai/sdk": "0.127.0",
+    "@anthropic-ai/sdk": "0.133.0",
     "@google/genai": "2.23.0",
     "openai": "7.20.0",
     "@libsql/client": "0.18.0"
